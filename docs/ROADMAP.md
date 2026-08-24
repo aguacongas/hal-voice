@@ -12,10 +12,12 @@
 - [ ] Test manuel : enregistrement + relecture
 - [ ] Documentation des devices audio trouvés
 
-## v0.3.0 — STT (Vosk FR)
-- [ ] `stt_vosk.py` : transcription offline
-- [ ] Script de téléchargement du modèle FR (`scripts/download_vosk_model.py`)
-- [ ] Test : dictée → texte
+## v0.3.0 — STT (Vosk FR) ✅
+- [x] `stt_vosk.py` : transcription offline
+- [x] `config.py` : centralisation des chemins / sample rate / env
+- [x] Modèle `vosk-model-small-fr-0.22` téléchargé dans `models/`
+- [x] Smoke test micro → STT validé (« ça va »)
+- [x] Tests pytest (5 verts)
 
 ## v0.4.0 — TTS (SAPI)
 - [ ] `tts_sapi.py` : synthèse vocale FR via `System.Speech`
