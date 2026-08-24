@@ -1,0 +1,40 @@
+# Third-Party Notices
+
+Ce projet utilise les bibliothèques open-source suivantes. Leurs licences sont listées ci-dessous par respect des obligations de redistribution.
+
+## Production
+
+| Bibliothèque | Version min. | Licence | Lien |
+|---|---|---|---|
+| `vosk` | 0.3.45 | Apache 2.0 | https://github.com/alphacep/vosk-api |
+| `sounddevice` | 0.4.6 | MIT | https://github.com/spatialaudio/python-sounddevice |
+| `soundfile` | 0.12.1 | BSD-3-Clause | https://github.com/bastibe/python-soundfile |
+| `pywin32` | 306 | PSF-2.0 | https://github.com/mhammond/pywin32 |
+| `keyboard` | 0.13.5 | MIT | https://github.com/boppreh/keyboard |
+| `pyyaml` | 6.0 | MIT | https://github.com/yaml/pyyaml |
+| `numpy` | transitif | BSD-3-Clause | https://numpy.org |
+
+## Modèle STT
+
+| Ressource | Licence | Lien |
+|---|---|---|
+| Vosk model `vosk-model-small-fr-0.22` | Apache 2.0 | https://alphacephei.com/vosk/models |
+
+## Dépendances de développement (test uniquement)
+
+| Bibliothèque | Version min. | Licence | Lien |
+|---|---|---|---|
+| `pytest` | 8.0 | MIT | https://github.com/pytest-dev/pytest |
+| `ruff` | 0.4.0 | MIT | https://github.com/astral-sh/ruff |
+
+---
+
+## Notes
+
+- Les textes complets des licences sont disponibles :
+  - **Apache 2.0** : https://www.apache.org/licenses/LICENSE-2.0
+  - **MIT** : https://opensource.org/licenses/MIT
+  - **BSD-3-Clause** : https://opensource.org/licenses/BSD-3-Clause
+  - **PSF-2.0** : https://opensource.org/licenses/Python-2.0
+
+- Ce fichier sera mis à jour à chaque ajout ou retrait de dépendance.

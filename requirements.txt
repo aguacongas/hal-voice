@@ -1,0 +1,16 @@
+# Audio I/O
+sounddevice>=0.4.6
+soundfile>=0.12.1
+
+# Speech-to-Text (Vosk, offline FR)
+vosk>=0.3.45
+
+# Windows-specific (TTS SAPI + hotkey global)
+pywin32>=306; sys_platform == "win32"
+keyboard>=0.13.5; sys_platform == "win32"
+
+# Config
+pyyaml>=6.0
+
+# Tests
+pytest>=8.0
