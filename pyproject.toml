@@ -49,3 +49,6 @@ where = ["src"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-ra -q"
+markers = [
+    "requires_hardware: tests qui dependent d'un micro/casque reel",
+]
