@@ -19,9 +19,11 @@
 - [x] Smoke test micro → STT validé (« ça va »)
 - [x] Tests pytest (5 verts)
 
-## v0.4.0 — TTS (SAPI)
-- [ ] `tts_sapi.py` : synthèse vocale FR via `System.Speech`
-- [ ] Test : texte → voix
+## v0.4.0 — TTS (SAPI) ✅
+- [x] `tts_sapi.py` : synthèse vocale FR via `System.Speech` (SAPI 5)
+- [x] Auto-sélection voix FR (Hortense sur Windows 11)
+- [x] Smoke test : « Bonjour, je suis Hal » entendu
+- [x] Tests pytest (9 verts, dont 1 hardware)
 
 ## v0.5.0 — Commandes vocales
 - [ ] `commands.py` : parser de commandes ("lis <fichier>", "stop", etc.)
