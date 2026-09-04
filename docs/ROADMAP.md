@@ -61,6 +61,7 @@
 - [x] Tests end-to-end (`tests/test_orchestrator.py`, fake adapters)
 - [x] Gestion des erreurs audio (timeout, device indisponible → silence)
 - [x] Mode silencieux (`--silent` / `HAL_VOICE_SILENT`)
+- [x] **Retrait du support natif Windows** (WSL2/Linux only) : TTS SAPI5/`win32com` et audio `sounddevice` supprimés, deps `pywin32`/`sounddevice` retirées, scripts `install.bat`/`run.bat`/`detect-mic.ps1`/`test-mic-device.sh` supprimés. `setup.bat`/`teardown.bat` (WSL2 + PulseAudio) conservés.
 
 ## v0.8.0 — Wake word
 - [ ] `wakeword.py` : détection du mot-clé "hal"

@@ -2,7 +2,7 @@
 
 ## Contexte
 
-Projet en Clean Architecture (`domain/`, `use_cases/`, `adapters/`) sur branche `wsl2-support`. Depuis 2026-09-05, le **TTS est audible sous WSL2** (voix French (France) via PulseAudio Windows). Installation/uninstallation automatisées. **Pas de back-compat** avec les anciens modules.
+Projet en Clean Architecture (`domain/`, `use_cases/`, `adapters/`) sur branche `wsl2-support`. Depuis 2026-09-05, le **TTS est audible sous WSL2** (voix French (France) via PulseAudio Windows). Installation/uninstallation automatisées. **Pas de back-compat** avec les anciens modules. Depuis 2026-09-04/09-05, le **support natif Windows a été retiré** (app WSL2/Linux seulement).
 
 ## Conclusion du travail déjà fait (à ne pas refaire)
 
@@ -12,6 +12,7 @@ Projet en Clean Architecture (`domain/`, `use_cases/`, `adapters/`) sur branche 
 - **Fix double module-waveout** : ligne commentée dans `default.pa`.
 - **run.sh auto-start PulseAudio Windows** si pas accessible.
 - **TTS audible WSL2** : `~/.asoundrc` → PulseAudio + `PULSE_SERVER=tcp:<gateway>` + voix French (France).
+- **Support natif Windows retiré** : TTS SAPI5/win32com et audio sounddevice supprimés ; deps `pywin32`/`sounddevice` retirées ; scripts `install.bat`/`run.bat`/`detect-mic.ps1`/`test-mic-device.sh` supprimés. `setup.bat`/`teardown.bat` (installent WSL2 + PulseAudio) **conservés**.
 
 ## TOUT RELIRE AVANT DE CODER
 

@@ -4,12 +4,6 @@
 
 ## Lancement
 
-### Windows
-
-```cmd
-scripts\run.bat
-```
-
 ### Linux / WSL2
 
 ```bash
@@ -115,9 +109,6 @@ pytest
 
 # Tests unitaires uniquement (pas de matériel)
 pytest -m "not requires_hardware"
-
-# Tests Windows uniquement
-pytest -m requires_windows
 
 # Tests avec verbose
 pytest tests/test_commands.py -v

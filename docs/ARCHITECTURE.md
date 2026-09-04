@@ -51,19 +51,20 @@ L'`Orchestrator` ne connaît que les **protocoles** (`domain/protocols.py`) ; le
 | Fichier | Rôle |
 |---|---|
 | `config_loader.py` | `load_config_from_env()` → `Config` |
-| `audio_io.py` | Capture micro + lecture audio (sounddevice / PulseAudio CLI) |
+| `audio_io.py` | Capture micro + lecture audio (PulseAudio CLI) |
 | `stt_vosk.py` | Vosk offline (modèle FR small, lazy loading) |
-| `tts.py` | SAPI5 (Windows) / pyttsx3+eSpeak-ng (Linux/WSL) |
+| `tts.py` | pyttsx3+eSpeak-ng (Linux/WSL) |
 | `hotkey.py` | Raccourcis clavier via pynput |
 
 ## `adapters/audio_io.py` — Capture micro + lecture audio
 
-Le module le plus complexe. Gère deux backends :
+Le module le plus complexe. Cible : Linux/WSL2 uniquement, via PulseAudio.
 
-| Backend | Plateforme | Input | Output |
-|---|---|---|---|
-| `sounddevice` (PortAudio) | Windows natif | `sd.rec()` | `sd.play()` |
-| PulseAudio CLI | WSL2 | `parecord` → fichier `.raw` → numpy | `paplay` ← fichier `.wav` temp |
+| Input | Output |
+|---|---|
+| `parecord` → fichier `.raw` → numpy | `paplay` ← fichier `.wav` temp |
+
+Le backend natif `sounddevice` a été retiré (plus de support Windows natif).
 
 **Détection WSL2** : `"microsoft" in /proc/version`
 
@@ -82,12 +83,13 @@ Le module le plus complexe. Gère deux backends :
 
 ## `adapters/tts.py` — Text-to-Speech
 
-Deux backends selon la plateforme :
+Backend unique :
 
-| Backend | Plateforme | Dépendance |
-|---|---|---|
-| `_SapiBackend` | Windows | `win32com` (SAPI 5, intégré) |
-| `_Pyttsx3Backend` | Linux/WSL | `pyttsx3` + `espeak-ng` |
+| Backend | Dépendance |
+|---|---|
+| `_Pyttsx3Backend` | `pyttsx3` + `espeak-ng` |
+
+Le backend Windows SAPI 5 (`win32com`) a été retiré.
 
 **Sélection de voix** (`_select_voice`) — priorité :
 1. `French (France)` (`_is_france` : hex `40C` / `roa/fr`)
@@ -115,12 +117,9 @@ Mapping simple mots-clés → intentions :
 |---|---|---|
 | `install.sh` | Linux/WSL | Auto-install Python + deps système + venv + modèle Vosk (multi-distro, `--check`) |
 | `uninstall.sh` | Linux/WSL | Désinstallation (safe ; `--full` retire les paquets apt) |
-| `setup.bat` | Windows | Installe WSL2 + Ubuntu + PulseAudio + configure + lance install.sh |
-| `teardown.bat` | Windows | Désinstallation (safe ; `--full` retire WSL2 + Ubuntu) |
+| `setup.bat` | Windows (hôte) | Installe WSL2 + Ubuntu + PulseAudio + configure + lance install.sh |
+| `teardown.bat` | Windows (hôte) | Désinstallation (safe ; `--full` retire WSL2 + Ubuntu) |
 | `run.sh` | Linux/WSL | Lancement (auto-start PulseAudio Windows) |
-| `run.bat` | Windows | Lancement |
-| `detect-mic.ps1` | Windows | Détection automatique du micro WaveIn |
-| `test-mic-device.sh` | WSL | Test d'amplitude d'un device PulseAudio |
 
 ## Flux audio WSL2
 

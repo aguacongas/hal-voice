@@ -4,26 +4,27 @@ Instruction file for OpenCode sessions working in `hal-voice`.
 
 ## Project status
 
-Python 3.10+ app: 100% local voice assistant — STT (Vosk, French offline) + TTS (SAPI5/pyttsx3) + audio I/O. **v0.5.0** — boucle vocale interactive fonctionnelle.
+Python 3.10+ app: 100% local voice assistant — STT (Vosk, French offline) + TTS (pyttsx3/eSpeak) + audio I/O. **WSL2/Linux only** — no native Windows app support (SAPI/sounddevice removed). **v0.8.0** — boucle vocale interactive fonctionnelle.
 
-- Layout: `src/hal_voice/` (package, setuptools `src` layout), `tests/`, `scripts/` (install/run per-OS), `models/` (Vosk model, gitignored).
+- Layout: `src/hal_voice/` (Clean Architecture: `domain/`, `use_cases/`, `adapters/`), `tests/`, `scripts/`, `models/` (Vosk model, gitignored).
 - Single package, real entrypoint `hal_voice.__main__:main` (also `python -m hal_voice`).
 
 ## Commands
 
-- Main loop: `python -m hal_voice` (Windows) or `./scripts/run.sh` (Linux/WSL). Proxy in `scripts/run.bat`/`run.sh`, which create/use `.venv` and `pip install -e`.
+- Main loop: `./scripts/run.sh` (WSL2/Linux) or `python -m hal_voice`. `run.sh` creates/uses `.venv` and `pip install -e`.
 - **Diagnose PulseAudio under WSL**: `python -m hal_voice --diagnose` (or `./scripts/run.sh --diagnose`) → lists sources, chosen device, and does a 3 s capture reporting `max_amplitude`. **Always run this first when investigating mic issues.**
 - Quick audio smoke test (record 3 s + replay): `python -m hal_voice.audio_io` (runs `quick_test()`).
-- Tests: `pytest` (from repo root). Hardware-dependent tests are marked `requires_hardware`; Windows-only ones `requires_windows` (see `pyproject.toml` `[tool.pytest.ini_options]`). Most tests are mocked — don't assume a real mic.
+- Silent mode (test STT without speaking): `./scripts/run.sh --silent`.
+- Tests: `pytest` (from repo root). Hardware-dependent tests are marked `requires_hardware` (see `pyproject.toml` `[tool.pytest.ini_options]`). Most tests are mocked — don't assume a real mic.
 - Lint: `ruff` (`line-length = 100`). Not installed in the default env; run via dev extra if needed.
 
 ## Config
 
-`src/hal_voice/config.py` — all tunables via env vars, no hardcoding in modules: `HAL_VOICE_MODEL_PATH`, `HAL_VOICE_SAMPLE_RATE` (default 16000), `HAL_VOICE_CHANNELS` (1), `HAL_VOICE_DTYPE` (int16), `HAL_VOICE_WAKE_WORD`.
+`src/hal_voice/domain/config.py` (chargé via `adapters/config_loader.py`) — all tunables via env vars, no hardcoding in modules: `HAL_VOICE_MODEL_PATH`, `HAL_VOICE_SAMPLE_RATE` (default 16000), `HAL_VOICE_CHANNELS` (1), `HAL_VOICE_DTYPE` (int16), `HAL_VOICE_WAKE_WORD`.
 
 ## Audio capture (audio_io.py) — critical WSL2 knowledge
 
-`AudioIO` auto-switches: `sounddevice` (PortAudio) normally, but under WSL2 uses PulseAudio CLI (`parecord`/`paplay`). WSL2 detection = `"microsoft" in /proc/version`.
+`AudioIO` uses the PulseAudio CLI (`parecord`/`paplay`) only (sounddevice/PortAudio removed — no native Windows). WSL2 detection = `"microsoft" in /proc/version`.
 
 **WSLg does NOT bridge the Windows microphone.** Only audio *output* works via WSLg. The input device seen there (`RDPSource`) returns only silence. To capture the mic under WSL2, the working setup is:
 - **PulseAudio for Windows** (port 4713 TCP, `auth-anonymous=1`, `module-waveout record=1`) installed on the host, exposing the mic as a source (`wavein`).
@@ -39,11 +40,11 @@ Python 3.10+ app: 100% local voice assistant — STT (Vosk, French offline) + TT
 
 **Auto-detection**: `_pulse_find_input_device()` probes each source with a 1 s capture (`_test_source_amplitude()`) and picks the one with the highest amplitude. If only one source exists, it's used directly.
 
-Resulting audio is mono int16 at the configured rate, fed to Vosk (`stt_vosk.py`). If no mic data, code returns a zeroed array (both `_record_sounddevice`/`_record_pulse` guard this).
+Resulting audio is mono int16 at the configured rate, fed to Vosk (`stt_vosk.py`). If no mic data, code returns a zeroed array (`_record_pulse` guards this).
 
 ## TTS
 
-Adapter `adapters/tts.py`: Windows → SAPI5 via `win32com`; Linux/WSL → `pyttsx3` (needs `espeak-ng`). Log line `Voix TTS selectionnee : ...` appears at startup.
+Adapter `adapters/tts.py`: pyttsx3 (needs `espeak-ng`) — SAPI5/win32com backend removed. Log line `Voix TTS selectionnee : ...` appears at startup.
 
 **Voice selection** (`_select_voice`): prefers `FRENCH (France)` — `_is_france()` matches SAPI hex `40C` (0x040C=1036) or eSpeak BCP 47 `roa/fr`; then any FR voice (`_is_french()` matches `fr`, `fra`, `roa/fr-be`, …); then fallback. Watch out: `_lang_id_to_int` only handles hex — BCP tags never parse, that's why `_is_french`/`_is_france` handle the eSpeak string format directly.
 
@@ -59,6 +60,7 @@ Both fixes run BEFORE `pyttsx3.init()` in `TTS.__init__`. If TTS is silent under
 - `docs/SESSION-NOTES-2026-09-03.md` — initial WSL2/PulseAudio setup, gotchas, outstanding items.
 - `docs/SESSION-NOTES-2026-09-04.md` — auto-detection, duplicate module-waveout fix, comments, docs.
 - `docs/SESSION-NOTES-2026-09-05.md` — Clean Architecture refactor, install/setup scripts, TTS audible fix.
+- `docs/SESSION-NOTES-2026-09-06.md` — retrait du support natif Windows (TTS/audio/deps/scripts/docs).
 
 ## Conventions
 
