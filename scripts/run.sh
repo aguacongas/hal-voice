@@ -12,6 +12,7 @@
 #   ./scripts/run.sh              # mode normal (boucle vocale)
 #   ./scripts/run.sh --diagnose   # diagnostic PulseAudio
 #   ./scripts/run.sh --test       # test record/replay 3s
+#   ./scripts/run.sh --silent     # boucle sans synthèse vocale (TTS muet)
 #
 # Notes WSL2 :
 #   - PulseAudio Windows doit tourner sur l'hôte pour capturer le micro

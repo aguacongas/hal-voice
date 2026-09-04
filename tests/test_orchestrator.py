@@ -225,3 +225,77 @@ def test_unknown_intent_is_noop() -> None:
     result = orch.execute_intent(Intent(name="FAKE_INTENT"))
     assert result is False
     assert tts.spoken == []
+
+
+# ── Mode silencieux (--silent) ────────────────────────────────────────
+
+
+def test_silent_mode_skips_greeting_speech() -> None:
+    """En mode silencieux, le TTS ne prononce pas les réponses."""
+    tts = FakeTTS()
+    orch = Orchestrator(
+        capture=FakeCapture(["x"]),
+        stt=FakeSTT([]),
+        tts=tts,
+        parser=CommandParser(),
+        silent=True,
+    )
+    assert orch.execute_intent(Intent(name="GREETING")) is False
+    assert tts.spoken == []
+
+
+def test_silent_mode_still_handles_intents() -> None:
+    """Le mode silencieux n'empêche pas l'exécution des intentions."""
+    tts = FakeTTS()
+    orch = Orchestrator(
+        capture=FakeCapture(["x"]),
+        stt=FakeSTT([]),
+        tts=tts,
+        parser=CommandParser(),
+        silent=True,
+    )
+    # EXIT doit toujours quitter la boucle (retourne True)
+    assert orch.execute_intent(Intent(name="EXIT")) is True
+    # STOP doit toujours appeler tts.stop() mais pas parler
+    orch.execute_intent(Intent(name="STOP"))
+    assert tts.stopped is True
+    assert tts.spoken == []
+
+
+# ── Config (mode silencieux) ──────────────────────────────────────────
+
+
+def test_config_silent_from_env(monkeypatch) -> None:
+    """HAL_VOICE_SILENT=true active le mode silencieux via la config."""
+    monkeypatch.setenv("HAL_VOICE_SILENT", "true")
+    monkeypatch.setattr(
+        "hal_voice.adapters.config_loader.sys.argv", ["hal_voice"]
+    )
+    from hal_voice.adapters.config_loader import load_config_from_env
+
+    cfg = load_config_from_env()
+    assert cfg.silent is True
+
+
+def test_config_silent_disable_by_default(monkeypatch) -> None:
+    """Sans variable ni argument, silent est False."""
+    monkeypatch.delenv("HAL_VOICE_SILENT", raising=False)
+    monkeypatch.setattr(
+        "hal_voice.adapters.config_loader.sys.argv", ["hal_voice"]
+    )
+    from hal_voice.adapters.config_loader import load_config_from_env
+
+    cfg = load_config_from_env()
+    assert cfg.silent is False
+
+
+def test_config_silent_from_cli_arg(monkeypatch) -> None:
+    """L'argument CLI --silent active le mode silencieux."""
+    monkeypatch.delenv("HAL_VOICE_SILENT", raising=False)
+    monkeypatch.setattr(
+        "hal_voice.adapters.config_loader.sys.argv", ["hal_voice", "--silent"]
+    )
+    from hal_voice.adapters.config_loader import load_config_from_env
+
+    cfg = load_config_from_env()
+    assert cfg.silent is True

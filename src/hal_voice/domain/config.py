@@ -54,3 +54,4 @@ class Config:
     channels: int
     dtype: str
     wake_word: str
+    silent: bool = False

@@ -8,6 +8,7 @@ dans l'Orchestrator (use case), et lance la boucle.
 Modes :
     python -m hal_voice           → boucle vocale interactive
     python -m hal_voice --diagnose → diagnostic PulseAudio (WSL2)
+    python -m hal_voice --silent  → boucle sans synthèse vocale (TTS muet)
 """
 
 from __future__ import annotations
@@ -43,7 +44,9 @@ def main() -> int:
 
     log.info("Hal s'éveille... (v0.5.0)")
 
-    orchestrator = Orchestrator(capture=io, stt=stt, tts=tts, parser=parser)
+    orchestrator = Orchestrator(
+        capture=io, stt=stt, tts=tts, parser=parser, silent=cfg.silent
+    )
     return orchestrator.run()
 
 

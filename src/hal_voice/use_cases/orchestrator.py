@@ -35,15 +35,22 @@ class Orchestrator:
         stt: ISTT,
         tts: ITTS,
         parser: CommandParser,
+        silent: bool = False,
     ) -> None:
         self._capture = capture
         self._stt = stt
         self._tts = tts
         self._parser = parser
+        self._silent = silent
+
+    def _speak(self, text: str) -> None:
+        """Prononce ``text``, sauf en mode silencieux (``--silent``)."""
+        if not self._silent:
+            self._tts.speak(text)
 
     def run(self) -> int:
         """Lance la boucle vocale interactive. Retourne 0 si OK."""
-        self._tts.speak("Systèmes opérationnels. Je vous écoute.")
+        self._speak("Systèmes opérationnels. Je vous écoute.")
         try:
             while True:
                 print("\n--- En attente d'une commande (3s) ---")
@@ -78,27 +85,27 @@ class Orchestrator:
     def execute_intent(self, intent: Intent) -> bool:
         """Exécute une intention. Retourne True s'il faut quitter la boucle."""
         if intent.name == "GREETING":
-            self._tts.speak("Bonjour Olivier. Que puis-je faire pour vous ?")
+            self._speak("Bonjour Olivier. Que puis-je faire pour vous ?")
 
         elif intent.name == "STOP":
             self._tts.stop()
-            self._tts.speak("Silence immédiat.")
+            self._speak("Silence immédiat.")
 
         elif intent.name == "READ_FILE":
             filename = intent.params.get("filename")
             path = Path(filename) if filename else None
             if path and path.exists() and path.is_file():
                 content = path.read_text(encoding="utf-8")
-                self._tts.speak(f"Lecture de {filename}. {content}")
+                self._speak(f"Lecture de {filename}. {content}")
             else:
-                self._tts.speak(f"Je ne trouve pas le fichier {filename}.")
+                self._speak(f"Je ne trouve pas le fichier {filename}.")
 
         elif intent.name == "EXIT":
-            self._tts.speak("Au revoir.")
+            self._speak("Au revoir.")
             return True
 
         elif intent.name == "ERROR":
             msg = intent.params.get("msg", "Une erreur est survenue.")
-            self._tts.speak(msg)
+            self._speak(msg)
 
         return False
