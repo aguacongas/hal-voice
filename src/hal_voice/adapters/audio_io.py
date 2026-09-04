@@ -111,9 +111,7 @@ _MIC_PATTERNS = ["alsa_input", "usb", "mic", "microphone", "webcam", "capture"]
 _RDP_PATTERNS = ["rdpsource", "rdp"]
 
 
-def _test_source_amplitude(
-    source: str, server: str | None = None, duration: float = 1.0
-) -> int:
+def _test_source_amplitude(source: str, server: str | None = None, duration: float = 1.0) -> int:
     """Teste un device PulseAudio en capturant ``duration`` secondes.
 
     Renvoie l'amplitude maximale (int). 0 = silence complet.

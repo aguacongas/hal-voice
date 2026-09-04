@@ -11,6 +11,8 @@ dist/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+.coverage
+coverage.xml
 
 # Audio & Models (le modèle Vosk se télécharge via scripts/install.bat)
 models/

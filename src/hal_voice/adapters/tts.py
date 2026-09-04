@@ -272,11 +272,13 @@ class _Pyttsx3Backend:
     def list_voices(self) -> list[dict]:
         result: list[dict] = []
         for i, v in enumerate(self._engine.getProperty("voices")):
-            result.append({
-                "index": i,
-                "description": v.name,
-                "language_id": _lang_id_to_int(v.id),
-            })
+            result.append(
+                {
+                    "index": i,
+                    "description": v.name,
+                    "language_id": _lang_id_to_int(v.id),
+                }
+            )
         return result
 
     def speak(self, text: str, blocking: bool) -> None:

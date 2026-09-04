@@ -63,10 +63,7 @@ class WakeWordDetector:
         """
         if not text:
             return ""
-        kept = [
-            t for t in text.split()
-            if self._bare(t.lower()) not in self._tokens
-        ]
+        kept = [t for t in text.split() if self._bare(t.lower()) not in self._tokens]
         return " ".join(kept).strip()
 
 
@@ -115,7 +112,5 @@ class AdaptiveVoiceActivity:
         amp = float(amplitude)
         if amp >= self.threshold:
             return True
-        self._noise_floor = (
-            (1.0 - self._alpha) * self._noise_floor + self._alpha * amp
-        )
+        self._noise_floor = (1.0 - self._alpha) * self._noise_floor + self._alpha * amp
         return False

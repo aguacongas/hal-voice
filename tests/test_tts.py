@@ -21,6 +21,7 @@ def _voice(voice_id: str, name: str) -> SimpleNamespace:
     """Crée un objet voix factice de type pyttsx3 (id + name)."""
     return SimpleNamespace(id=voice_id, name=name)
 
+
 # ── Tests unitaires (langue / helpers) ────────────────────────────────
 
 

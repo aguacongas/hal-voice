@@ -46,9 +46,7 @@ class FakeSTT(ISTT):
         self._transcriptions = list(transcriptions)
         self.calls = 0
 
-    def transcribe_array(
-        self, audio: np.ndarray, sample_rate: int | None = None
-    ) -> str:
+    def transcribe_array(self, audio: np.ndarray, sample_rate: int | None = None) -> str:
         self.calls += 1
         if not self._transcriptions:
             return ""
@@ -77,9 +75,7 @@ def _make_orchestrator(
     capture = FakeCapture(samples or ["x"])
     stt = FakeSTT(transcriptions or [])
     tts = FakeTTS()
-    orchestrator = Orchestrator(
-        capture=capture, stt=stt, tts=tts, parser=CommandParser()
-    )
+    orchestrator = Orchestrator(capture=capture, stt=stt, tts=tts, parser=CommandParser())
     return orchestrator, capture, stt, tts
 
 
@@ -106,9 +102,7 @@ def test_execute_stop_stops_and_speaks() -> None:
 def test_execute_read_file_missing() -> None:
     """READ_FILE sur un fichier inexistant → message d'erreur."""
     orch, _, _, tts = _make_orchestrator()
-    result = orch.execute_intent(
-        Intent(name="READ_FILE", params={"filename": "introuvable.txt"})
-    )
+    result = orch.execute_intent(Intent(name="READ_FILE", params={"filename": "introuvable.txt"}))
     assert result is False
     assert "ne trouve pas le fichier" in tts.spoken[-1]
 
@@ -124,9 +118,7 @@ def test_execute_exit_returns_true() -> None:
 def test_execute_error_speaks_message() -> None:
     """ERROR → prononce le message d'erreur fourni."""
     orch, _, _, tts = _make_orchestrator()
-    result = orch.execute_intent(
-        Intent(name="ERROR", params={"msg": "fichier illisible"})
-    )
+    result = orch.execute_intent(Intent(name="ERROR", params={"msg": "fichier illisible"}))
     assert result is False
     assert "fichier illisible" in tts.spoken[-1]
 
@@ -188,9 +180,7 @@ def test_run_keyboard_interrupt_returns_zero(monkeypatch) -> None:
     tts = FakeTTS()
     orch = Orchestrator(capture=capture, stt=stt, tts=tts, parser=CommandParser())
 
-    monkeypatch.setattr(
-        orch._capture, "record", lambda *a, **k: _raise()
-    )
+    monkeypatch.setattr(orch._capture, "record", lambda *a, **k: _raise())
 
     result = orch.run()
     assert result == 0
@@ -213,9 +203,7 @@ def test_mock_adapters_work_with_orchestrator() -> None:
     mock_stt = MagicMock()
     mock_stt.transcribe_array.return_value = "au revoir"
     mock_tts = MagicMock()
-    orch = Orchestrator(
-        capture=mock_capture, stt=mock_stt, tts=mock_tts, parser=CommandParser()
-    )
+    orch = Orchestrator(capture=mock_capture, stt=mock_stt, tts=mock_tts, parser=CommandParser())
     assert orch.execute_intent(Intent(name="EXIT")) is True
     mock_tts.speak.assert_called()
 
@@ -269,9 +257,7 @@ def test_silent_mode_still_handles_intents() -> None:
 def test_config_silent_from_env(monkeypatch) -> None:
     """HAL_VOICE_SILENT=true active le mode silencieux via la config."""
     monkeypatch.setenv("HAL_VOICE_SILENT", "true")
-    monkeypatch.setattr(
-        "hal_voice.adapters.config_loader.sys.argv", ["hal_voice"]
-    )
+    monkeypatch.setattr("hal_voice.adapters.config_loader.sys.argv", ["hal_voice"])
     from hal_voice.adapters.config_loader import load_config_from_env
 
     cfg = load_config_from_env()
@@ -281,9 +267,7 @@ def test_config_silent_from_env(monkeypatch) -> None:
 def test_config_silent_disable_by_default(monkeypatch) -> None:
     """Sans variable ni argument, silent est False."""
     monkeypatch.delenv("HAL_VOICE_SILENT", raising=False)
-    monkeypatch.setattr(
-        "hal_voice.adapters.config_loader.sys.argv", ["hal_voice"]
-    )
+    monkeypatch.setattr("hal_voice.adapters.config_loader.sys.argv", ["hal_voice"])
     from hal_voice.adapters.config_loader import load_config_from_env
 
     cfg = load_config_from_env()
@@ -293,9 +277,7 @@ def test_config_silent_disable_by_default(monkeypatch) -> None:
 def test_config_silent_from_cli_arg(monkeypatch) -> None:
     """L'argument CLI --silent active le mode silencieux."""
     monkeypatch.delenv("HAL_VOICE_SILENT", raising=False)
-    monkeypatch.setattr(
-        "hal_voice.adapters.config_loader.sys.argv", ["hal_voice", "--silent"]
-    )
+    monkeypatch.setattr("hal_voice.adapters.config_loader.sys.argv", ["hal_voice", "--silent"])
     from hal_voice.adapters.config_loader import load_config_from_env
 
     cfg = load_config_from_env()
