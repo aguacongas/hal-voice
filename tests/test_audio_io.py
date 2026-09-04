@@ -120,13 +120,13 @@ def test_is_wsl_non_linux(monkeypatch) -> None:
     assert m._is_wsl() is False
 
 
-def test_is_wsl_linux_with_microsoft(monkeypatch, tmp_path) -> None:
+def test_is_wsl_linux_with_microsoft(monkeypatch) -> None:
     import hal_voice.adapters.audio_io as m
 
     monkeypatch.setattr("sys.platform", "linux")
-    version = tmp_path / "version"
-    version.write_text("microsoft standard WSL2\n")
-    monkeypatch.setattr(m.Path, "__truediv__", lambda self, other: version)
+    monkeypatch.setattr(
+        m.Path, "read_text", lambda self: "microsoft standard WSL2\n"
+    )
     assert m._is_wsl() is True
 
 
