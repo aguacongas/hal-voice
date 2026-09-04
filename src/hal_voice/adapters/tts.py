@@ -19,11 +19,18 @@ Sélection de la voix :
 Flags SAPI 5 :
     - SPF_ASYNC (1) : lecture asynchrone (non bloquant)
     - SPF_PURGEBEFORESPEAK (2) : purge la file avant de parler
+
+WSL2 / PulseAudio :
+    eSpeak-ng utilise ALSA par défaut pour la sortie audio. Sous WSL2,
+    ALSA n'a pas de carte son → erreurs. Fix : on force PulseAudio via
+    les variables d'environnement PULSE_SERVER + ESPEAK_DATA_PATH avant
+    l'initialisation de pyttsx3.
 """
 
 from __future__ import annotations
 
 import logging
+import os
 import sys
 
 log = logging.getLogger(__name__)
@@ -55,11 +62,32 @@ def _lang_id_to_int(value: str | int) -> int:
         return 0
 
 
+def _is_french(value: str | int) -> bool:
+    """Détecte si un identifiant de langue correspond au français.
+
+    Gère les trois formats :
+    - SAPI 5 : hex string ('40C') ou entier (1036) → compare avec FRENCH_LANG_ID
+    - pyttsx3/eSpeak : IDs BCP 47 ('roa/fr', 'roa/fr-be', 'fr', 'fra')
+      → vérifie la présence d'un tag 'fr' isolé
+    """
+    if isinstance(value, int):
+        return value == FRENCH_LANG_ID
+    # SAPI hex
+    try:
+        return int(value, 16) == FRENCH_LANG_ID
+    except (ValueError, TypeError):
+        pass
+    # BCP 47 / eSpeak : token 'fr' (fr, fr-fr, fr/roa, roa/fr, fra...)
+    s = str(value).strip().lower().replace("_", "-").replace("/", "-")
+    tokens = {t for t in s.split("-") if t}
+    return "fr" in tokens or "fra" in tokens or "fre" in tokens
+
+
 def _select_voice(setter, voices, voice_name: str | None, get_desc, get_attr, set_prop) -> str:
     """Logique commune de sélection de voix.
 
     1. Si voice_name fourni → cherche par nom
-    2. Sinon → première voix FR
+    2. Sinon → première voix FR (supporte SAPI hex + BCP 47)
     3. Fallback → première voix du système
     """
     target = None
@@ -73,8 +101,7 @@ def _select_voice(setter, voices, voice_name: str | None, get_desc, get_attr, se
 
     if target is None:
         for v in voices:
-            lang = get_attr(v)
-            if _lang_id_to_int(lang) == FRENCH_LANG_ID:
+            if _is_french(get_attr(v)):
                 target = v
                 break
 
@@ -89,6 +116,56 @@ def _select_voice(setter, voices, voice_name: str | None, get_desc, get_attr, se
     return ""
 
 
+def _configure_pulse_for_espeak() -> None:
+    """Configure PulseAudio comme sortie audio pour eSpeak-ng sous WSL2.
+
+    eSpeak-ng utilise ALSA par défaut. Sous WSL2, ALSA n'a pas de carte
+    son → erreurs ALSA. Cette fonction force eSpeak à utiliser PulseAudio
+    Windows (TCP) au lieu de WSLg ou ALSA.
+
+    À appeler AVANT l'import de pyttsx3.
+    """
+    # Détecte WSL2
+    try:
+        with open("/proc/version") as f:
+            is_wsl = "microsoft" in f.read().lower()
+    except OSError:
+        is_wsl = False
+
+    if not is_wsl:
+        return
+
+    # Récupère l'IP Windows (gateway)
+    import subprocess
+
+    try:
+        out = subprocess.check_output(
+            ["ip", "route", "show", "default"], text=True, stderr=subprocess.DEVNULL
+        )
+        host_ip = out.split()[2]
+    except (subprocess.CalledProcessError, IndexError, FileNotFoundError):
+        return
+
+    tcp_server = f"tcp:{host_ip}"
+
+    # Teste si PulseAudio Windows (TCP) est accessible — préféré à WSLg
+    try:
+        subprocess.run(
+            ["pactl", "info"],
+            env={**os.environ, "PULSE_SERVER": tcp_server},
+            capture_output=True,
+            timeout=3,
+            check=True,
+        )
+    except (subprocess.CalledProcessError, FileNotFoundError, subprocess.TimeoutExpired):
+        log.warning("PulseAudio Windows inaccessible — eSpeak peut échouer (erreurs ALSA)")
+        return
+
+    # Force eSpeak-ng à utiliser PulseAudio Windows
+    os.environ["PULSE_SERVER"] = tcp_server
+    log.info("eSpeak configuré pour PulseAudio Windows : %s", tcp_server)
+
+
 class TTS:
     """Wrapper TTS multi-plateforme.
 
@@ -100,6 +177,7 @@ class TTS:
         if sys.platform == "win32":
             self._backend = _SapiBackend(voice_name)
         else:
+            _configure_pulse_for_espeak()
             self._backend = _Pyttsx3Backend(voice_name)
 
     def list_voices(self) -> list[dict]:
