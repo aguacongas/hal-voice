@@ -1,68 +1,111 @@
 # hal-voice
 
-> Interface vocale 100% locale pour Windows.
+> Interface vocale 100% locale pour Windows et WSL2.
 > **STT** (voix → texte) via [Vosk](https://alphacephei.com/vosk/) (offline, FR).
-> **TTS** (texte → voix) via SAPI 5 (`System.Speech`, intégré à Windows).
+> **TTS** (texte → voix) via SAPI 5 (Windows) / pyttsx3+eSpeak (Linux).
 > Pas de cloud, pas de clé d'API, pas d'écoute permanente.
 
-## 🎯 Objectif
+## Objectif
 
-Donner la parole et l'ouïe à un assistant local sur Windows, en français, sans dépendre d'un service cloud. Pensé pour un usage personnel (dictée, relecture de textes, commandes vocales).
+Donner la parole et l'ouïe à un assistant vocal local, en français, sans dépendre d'un service cloud. Pensé pour un usage personnel : commandes vocales, relecture de textes, dictée.
 
-## ✨ Fonctionnalités prévues
+## Fonctionnalités
 
-| Mode | Description |
-|---|---|
-| **Dictée** | Tu parles, hal-voice transcrit en texte (FR, offline). |
-| **Relecture** | hal-voice lit à voix haute un fichier / une scène. |
-| **Commande vocale** | Mot-clé (ex. « hal ») + phrase → action. |
-| **Hotkey global** | Touche dédiée (ex. `F8`) pour activer / couper le micro. |
+| Mode | Description | Statut |
+|---|---|---|
+| **Commande vocale** | Phrase → intention → action (bonjour, stop, lis, au revoir) | v0.5.0 |
+| **STT offline** | Transcription vocale via Vosk (FR, sans internet) | v0.3.0 |
+| **TTS** | Synthèse vocale SAPI5 (Windows) / pyttsx3 (Linux) | v0.4.0 |
+| **Audio I/O** | Capture micro + lecture audio (cross-platform) | v0.2.0 |
+| **Hotkey global** | Raccourci clavier via pynput (F8, etc.) | v0.6.0 |
+| **Wake word** | Détection du mot-clé "hal" | v0.6.0 |
 
-## 🚧 Statut
-
-**v0.1.0 — Squelette.** Aucun module implémenté, juste la structure du projet. Le code arrive par étapes (voir `docs/ROADMAP.md`).
-
-## 📦 Stack technique
+## Stack technique
 
 - **Langage** : Python 3.10+
 - **STT** : [`vosk`](https://pypi.org/project/vosk/) + modèle `vosk-model-small-fr-0.22`
-- **TTS** : `System.Speech` (SAPI 5, via `pywin32`)
-- **Audio** : `sounddevice`, `soundfile`
-- **Hotkey** : `keyboard` (Windows)
-- **Config** : `pyyaml`
+- **TTS** : SAPI 5 via `win32com` (Windows) / `pyttsx3` + `espeak-ng` (Linux)
+- **Audio** : `sounddevice` (Windows) / `parecord`/`paplay` via PulseAudio (WSL2)
+- **Hotkey** : `pynput` (cross-platform)
+- **Config** : variables d'environnement (`HAL_VOICE_*`)
 
-## 📁 Structure
+## Installation
 
-```
-hal-voice/
-├── src/hal_voice/        ← code source (modules)
-├── tests/                ← tests unitaires
-├── docs/                 ← ARCHITECTURE.md, INSTALL.md, USAGE.md, ROADMAP.md
-├── scripts/              ← install.bat, run.bat (Windows)
-├── requirements.txt
-├── pyproject.toml
-├── LICENSE               ← Apache 2.0
-└── THIRD-PARTY-NOTICES   ← licences des dépendances
+### Windows
+
+```cmd
+git clone https://github.com/aguacongas/hal-voice.git
+cd hal-voice
+scripts\install.bat
 ```
 
-## 🛠️ Installation (à venir)
+### Linux / WSL2
 
 ```bash
 git clone https://github.com/aguacongas/hal-voice.git
 cd hal-voice
-python -m venv .venv
-.venv\Scripts\activate
-pip install -r requirements.txt
+./scripts/install.sh
 ```
 
-Le téléchargement du modèle Vosk FR sera automatisé par `scripts/install.bat`.
+Voir [docs/INSTALL.md](docs/INSTALL.md) pour les détails.
 
-## 📜 Licence
+## Utilisation
+
+```bash
+# Mode normal (boucle vocale)
+python -m hal_voice
+# ou
+./scripts/run.sh          # Linux/WSL2
+scripts\run.bat           # Windows
+
+# Diagnostic PulseAudio (WSL2)
+python -m hal_voice --diagnose
+
+# Test audio rapide (record 3s + replay)
+python -m hal_voice.audio_io
+```
+
+Voir [docs/USAGE.md](docs/USAGE.md) pour les commandes vocales.
+
+## Structure
+
+```
+hal-voice/
+├── src/hal_voice/          ← code source
+│   ├── __main__.py         ← boucle principale
+│   ├── audio_io.py         ← capture micro + playback
+│   ├── stt_vosk.py         ← reconnaissance vocale (Vosk)
+│   ├── tts_sapi.py         ← synthèse vocale (SAPI5/pyttsx3)
+│   ├── commands.py         ← parser de commandes vocales
+│   ├── config.py           ← configuration centralisée
+│   ├── hotkey.py           ← raccourcis clavier (pynput)
+│   └── wakeword.py         ← détection mot-clé (placeholder)
+├── tests/                  ← tests unitaires (pytest)
+├── scripts/                ← install + run (Windows/Linux/WSL2)
+├── docs/                   ← architecture, install, usage, roadmap
+├── models/                 ← modèle Vosk (gitignored)
+├── requirements.txt
+├── pyproject.toml
+└── LICENSE                 ← Apache 2.0
+```
+
+## Tests
+
+```bash
+# Tous les tests
+pytest
+
+# Tests spécifiques
+pytest tests/test_commands.py -v
+pytest -m requires_hardware  # nécessite un micro
+```
+
+## Licence
 
 **Apache License 2.0** — voir [LICENSE](LICENSE).
 
 Les dépendances tierces ont leurs propres licences, listées dans [THIRD-PARTY-NOTICES](THIRD-PARTY-NOTICES).
 
-## 👤 Auteur
+## Auteur
 
 Olivier Lefebvre — [@aguacongas](https://github.com/aguacongas)
