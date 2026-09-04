@@ -56,11 +56,11 @@
 - [x] Fix TTS : préférence voix **French (France)**
 - [x] Fix TTS : sortie audible sous WSL2 via `~/.asoundrc` → PulseAudio Windows
 
-## v0.7.0 — App utilisable
+## v0.7.0 — App utilisable ✅
 - [x] `scripts/install.sh` amélioré (détection auto des dépendances)
-- [ ] Tests end-to-end
-- [ ] Gestion des erreurs audio (timeout, device indisponible)
-- [ ] Mode silencieux (pas de TTS)
+- [x] Tests end-to-end (`tests/test_orchestrator.py`, fake adapters)
+- [x] Gestion des erreurs audio (timeout, device indisponible → silence)
+- [x] Mode silencieux (`--silent` / `HAL_VOICE_SILENT`)
 
 ## v0.8.0 — Wake word
 - [ ] `wakeword.py` : détection du mot-clé "hal"

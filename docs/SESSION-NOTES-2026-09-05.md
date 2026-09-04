@@ -74,9 +74,9 @@ Testé manuellement : `aplay -D pulse` → retcode 0 ; `aplay` (via asoundrc) �
 
 ## Prochaines étapes
 
-- [ ] v0.7.0 : tests end-to-end
-- [ ] v0.7.0 : gestion des erreurs audio (timeout, device indisponible)
-- [ ] v0.7.0 : mode silencieux (`--silent`)
+- [x] v0.7.0 : tests end-to-end (`tests/test_orchestrator.py`)
+- [x] v0.7.0 : gestion des erreurs audio (timeout, device indisponible)
+- [x] v0.7.0 : mode silencieux (`--silent` / `HAL_VOICE_SILENT`)
 - [ ] v0.8.0 : wake word ("hal")
 
 ## Fichiers modifiés

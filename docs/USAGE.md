@@ -22,6 +22,17 @@ scripts\run.bat
 python -m hal_voice
 ```
 
+### Mode silencieux
+
+Sans synthèse vocale (le TTS reste muet, utile pour tester le STT sans
+que la voix de Hal ne pollue l'écoute du micro) :
+
+```bash
+python -m hal_voice --silent
+# ou
+HAL_VOICE_SILENT=true python -m hal_voice
+```
+
 ## Commandes vocales
 
 hal-voice écoute pendant 3 secondes, transcrit la parole, puis exécute l'action correspondante.
@@ -87,6 +98,7 @@ Tous les paramètres sont configurables via variables d'environnement :
 | `HAL_VOICE_CHANNELS` | `1` | Nombre de canaux (1=mono) |
 | `HAL_VOICE_DTYPE` | `int16` | Type de données audio |
 | `HAL_VOICE_WAKE_WORD` | `hal` | Mot d'activation (placeholder) |
+| `HAL_VOICE_SILENT` | `false` | `true` → désactive la synthèse vocale (équivaut à `--silent`) |
 
 Exemple :
 
@@ -113,7 +125,7 @@ pytest tests/test_commands.py -v
 
 ## Ajouter une commande
 
-1. Éditer `src/hal_voice/commands.py`
-2. Ajouter un mot-clé dans `_triggers`
-3. Ajouter le handler dans `__main__.py` (boucle principale)
-4. Ajouter un test dans `tests/test_commands.py`
+1. Éditer `src/hal_voice/use_cases/command_parser.py`
+2. Ajouter un mot-clé dans le mapping des triggers
+3. Ajouter le handler dans `src/hal_voice/use_cases/orchestrator.py` (`execute_intent`)
+4. Ajouter un test dans `tests/test_commands.py` (parser) et éventuellement `tests/test_orchestrator.py` (exécution)
