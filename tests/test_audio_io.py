@@ -124,9 +124,7 @@ def test_is_wsl_linux_with_microsoft(monkeypatch) -> None:
     import hal_voice.adapters.audio_io as m
 
     monkeypatch.setattr("sys.platform", "linux")
-    monkeypatch.setattr(
-        m.Path, "read_text", lambda self: "microsoft standard WSL2\n"
-    )
+    monkeypatch.setattr(m.Path, "read_text", lambda self: "microsoft standard WSL2\n")
     assert m._is_wsl() is True
 
 
