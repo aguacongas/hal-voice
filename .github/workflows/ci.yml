@@ -60,8 +60,8 @@ jobs:
     runs-on: ubuntu-latest
     needs: test
     # Les secrets ne sont pas lisibles dans `if` ; on les expose dans l'env
-    # du job pour tester leur présence. Job skip tant que SONAR_TOKEN n'est
-    # pas configuré (Settings → Secrets → Actions).
+    # du job pour tester leur presence. Job skip tant que SONAR_TOKEN n'est
+    # pas configure (Settings -> Secrets -> Actions).
     env:
       SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
     if: ${{ env.SONAR_TOKEN != '' }}
