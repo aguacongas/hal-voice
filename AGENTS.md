@@ -43,13 +43,22 @@ Resulting audio is mono int16 at the configured rate, fed to Vosk (`stt_vosk.py`
 
 ## TTS
 
-`tts_sapi.py`: Windows → SAPI5 via `win32com`; Linux/WSL → `pyttsx3` (needs `espeak-ng`). Log line `Voix TTS selectionnee : ...` appears at startup.
+Adapter `adapters/tts.py`: Windows → SAPI5 via `win32com`; Linux/WSL → `pyttsx3` (needs `espeak-ng`). Log line `Voix TTS selectionnee : ...` appears at startup.
+
+**Voice selection** (`_select_voice`): prefers `FRENCH (France)` — `_is_france()` matches SAPI hex `40C` (0x040C=1036) or eSpeak BCP 47 `roa/fr`; then any FR voice (`_is_french()` matches `fr`, `fra`, `roa/fr-be`, …); then fallback. Watch out: `_lang_id_to_int` only handles hex — BCP tags never parse, that's why `_is_french`/`_is_france` handle the eSpeak string format directly.
+
+**eSpeak-ng under WSL2 (critical)**: pyttsx3's espeak driver renders speech to a temp WAV then plays it via `os.system("aplay <wav> -q")`. `aplay` uses **ALSA** which has no sound card under WSL2 → "cannot find card '0'" errors and **NO AUDIBLE OUTPUT**. Fix already in `_configure_pulse_for_espeak()`:
+1. Forces `PULSE_SERVER=tcp:<gateway>` (Windows PulseAudio) instead of WSLg — checked via `pactl info`.
+2. `_write_asoundrc()` writes `~/.asoundrc` redirecting `pcm.!default`/`ctl.!default` → `type pulse` (needs `libasound2-plugins` installed, which `install.sh` ensures). This makes `aplay` route through PulseAudio. Idempotent — only writes if missing.
+
+Both fixes run BEFORE `pyttsx3.init()` in `TTS.__init__`. If TTS is silent under WSL2, check `~/.asoundrc` exists and `PULSE_SERVER` is the tcp gateway (not `unix:/mnt/wslg/...`).
 
 ## Session notes
 
 - `docs/SESSION-RESUME-INSTRUCTIONS.md` — **read this first** to resume work. Contains runtime state, quick tests, and next steps.
 - `docs/SESSION-NOTES-2026-09-03.md` — initial WSL2/PulseAudio setup, gotchas, outstanding items.
 - `docs/SESSION-NOTES-2026-09-04.md` — auto-detection, duplicate module-waveout fix, comments, docs.
+- `docs/SESSION-NOTES-2026-09-05.md` — Clean Architecture refactor, install/setup scripts, TTS audible fix.
 
 ## Conventions
 

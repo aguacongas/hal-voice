@@ -46,8 +46,18 @@
 - [x] Commentaires détaillés en français sur tout le code
 - [x] Documentation complète (README, ARCHITECTURE, INSTALL, USAGE)
 
+## v0.6.1 — Architecture propre + TTS audible (WSL2) ✅
+- [x] Refonte Clean Architecture (`domain/`, `use_cases/`, `adapters/`)
+- [x] Suppression des modules legacy (pas de back-compat)
+- [x] `install.sh` / `uninstall.sh` auto (multi-distro, `--check`, `--skip-apt`)
+- [x] `setup.bat` / `teardown.bat` Windows (WSL2 + Ubuntu + PulseAudio)
+- [x] Dépendances à jour (sounddevice, soundfile, pyttsx3, pynput, pytest, ruff)
+- [x] Fix TTS : détection voix FR (BCP 47 `roa/fr` + SAPI hex)
+- [x] Fix TTS : préférence voix **French (France)**
+- [x] Fix TTS : sortie audible sous WSL2 via `~/.asoundrc` → PulseAudio Windows
+
 ## v0.7.0 — App utilisable
-- [ ] `scripts/install.sh` amélioré (détection auto des dépendances)
+- [x] `scripts/install.sh` amélioré (détection auto des dépendances)
 - [ ] Tests end-to-end
 - [ ] Gestion des erreurs audio (timeout, device indisponible)
 - [ ] Mode silencieux (pas de TTS)
