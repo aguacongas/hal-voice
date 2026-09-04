@@ -380,3 +380,91 @@ def test_standby_ignores_speech_without_wake_word(monkeypatch) -> None:
     # Le premier "bonjour" ne doit PAS produire la réponse "Bonjour Olivier".
     # Wake "hal" oui, commande "au revoir" oui.
     assert any("Au revoir" in s for s in tts.spoken)
+
+
+# ── Branches de couverture supplémentaires ───────────────────────────
+
+
+def test_run_exception_returns_one(monkeypatch) -> None:
+    """Une exception non-Ctrl-C dans la boucle → run() retourne 1."""
+    orch, _, _, _ = _make_orchestrator()
+
+    def _boom(*a, **k):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(orch._capture, "record", _boom)
+    assert orch.run() == 1
+
+
+def test_run_continuous_ignores_unparsed_text(monkeypatch) -> None:
+    """En continu, un texte non reconnu → on continue sans message TTS."""
+    capture = AmplitudeCapture([2000.0, 2000.0])  # la 2e échoue → KeyboardInterrupt
+    stt = FakeSTT(["bla bla", "au revoir"])
+
+    class _NoPrint:
+        pass
+
+    orch = Orchestrator(
+        capture=capture,
+        stt=stt,
+        tts=FakeTTS(),
+        parser=CommandParser(),
+    )
+    monkeypatch.setattr("builtins.print", lambda *a, **k: None)
+    result = orch.run()
+    assert result == 0
+    assert stt.calls >= 1
+
+
+def test_standby_text_without_intent_is_ignored(monkeypatch) -> None:
+    """Veille : parole détectée mais texte sans intention → on reste en veille."""
+    capture = AmplitudeCapture([50.0, 2000.0, 2000.0])
+    stt = FakeSTT(["blabla", "hal"])
+    tts = FakeTTS()
+    orch = Orchestrator(
+        capture=capture,
+        stt=stt,
+        tts=tts,
+        parser=CommandParser(),
+        wake_detector=WakeWordDetector("hal"),
+        vad=AdaptiveVoiceActivity(init_floor=200.0, factor=3.0),
+    )
+    monkeypatch.setattr("builtins.print", lambda *a, **k: None)
+
+    # Le VAD détecte la parole sur "blabla" → transcrit → pas d'intention → continue.
+    result = orch.run()
+    assert result == 0
+
+
+def test_standby_no_text_after_wake(monkeypatch) -> None:
+    """Après le wake word, pas de texte → on revient en veille (no crash)."""
+    capture = AmplitudeCapture([2000.0, 2000.0, 2000.0])
+    stt = FakeSTT(["hal", ""])
+    orch = Orchestrator(
+        capture=capture,
+        stt=stt,
+        tts=FakeTTS(),
+        parser=CommandParser(),
+        wake_detector=WakeWordDetector("hal"),
+        vad=AdaptiveVoiceActivity(init_floor=200.0, factor=3.0),
+    )
+    monkeypatch.setattr("builtins.print", lambda *a, **k: None)
+    result = orch.run()
+    assert result == 0
+
+
+def test_standby_no_intent_after_wake(monkeypatch) -> None:
+    """Après le wake word, un texte sans intention → on revient en veille."""
+    capture = AmplitudeCapture([2000.0, 2000.0, 2000.0, 2000.0])
+    stt = FakeSTT(["hal", "bla bla"])
+    orch = Orchestrator(
+        capture=capture,
+        stt=stt,
+        tts=FakeTTS(),
+        parser=CommandParser(),
+        wake_detector=WakeWordDetector("hal"),
+        vad=AdaptiveVoiceActivity(init_floor=200.0, factor=3.0),
+    )
+    monkeypatch.setattr("builtins.print", lambda *a, **k: None)
+    result = orch.run()
+    assert result == 0
