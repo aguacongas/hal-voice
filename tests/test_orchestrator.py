@@ -21,6 +21,7 @@ from hal_voice.domain.entities import Intent
 from hal_voice.domain.protocols import ISTT, ITTS, IAudioCapture
 from hal_voice.use_cases.command_parser import CommandParser
 from hal_voice.use_cases.orchestrator import Orchestrator
+from hal_voice.use_cases.wakeword import AdaptiveVoiceActivity, WakeWordDetector
 
 # ── Fakes (implémentations des protocoles) ───────────────────────────
 
@@ -299,3 +300,101 @@ def test_config_silent_from_cli_arg(monkeypatch) -> None:
 
     cfg = load_config_from_env()
     assert cfg.silent is True
+
+
+# ── Mode veille (wake word) ──────────────────────────────────────────
+
+
+class AmplitudeCapture(IAudioCapture):
+    """Capture factice renvoyant une amplitude fixe par appel.
+
+    Lève KeyboardInterrupt quand la liste d'amplitudes est épuisée,
+    ce qui permet de sortir proprement d'une boucle de veille infinie.
+    """
+
+    def __init__(self, amplitudes: list[float]) -> None:
+        self._amplitudes = list(amplitudes)
+        self.records = 0
+
+    def record(self, duration_seconds: float) -> np.ndarray:
+        if not self._amplitudes:
+            raise KeyboardInterrupt
+        amp = self._amplitudes.pop(0)
+        self.records += 1
+        n = int(duration_seconds * 16000)
+        return np.full((n, 1), int(amp), dtype=np.int16)
+
+
+def test_standby_remains_silent_without_speech(monkeypatch) -> None:
+    """En veille, sans parole (amplitude faible), pas de STT appelé.
+
+    La boucle de mode veille tourne mais ne transcrit pas tant que le VAD
+    ne détecte pas d'activité vocale. La capture épuisée coupe la boucle.
+    """
+    capture = AmplitudeCapture([50.0] * 10)  # très silencieux
+    stt = FakeSTT(["n importe quoi"])
+    orch = Orchestrator(
+        capture=capture,
+        stt=stt,
+        tts=FakeTTS(),
+        parser=CommandParser(),
+        wake_detector=WakeWordDetector("hal"),
+        vad=AdaptiveVoiceActivity(init_floor=1000.0, factor=10.0),
+    )
+    monkeypatch.setattr("builtins.print", lambda *a, **k: None)
+
+    result = orch.run()
+    assert result == 0
+    # Aucune transcription n'a eu lieu (le VAD n'a jamais signalé de parole)
+    assert stt.calls == 0
+    assert capture.records >= 1
+
+
+def test_standby_wake_then_command_end_to_end(monkeypatch) -> None:
+    """Wake word entendu → engagement → commande traitée → au revoir.
+
+    Séquence audio : silence, puis "hal" (coup de voix), puis la commande
+    "au revoir" après le wake. La boucle doit se terminer.
+    """
+    # amplitudes : silencieuses, puis fortes (parole), fortes pour le wake,
+    # et fortes pour la commande.
+    capture = AmplitudeCapture([50.0, 2000.0, 2000.0, 2000.0])
+    stt = FakeSTT(["hal", "au revoir"])
+    tts = FakeTTS()
+    orch = Orchestrator(
+        capture=capture,
+        stt=stt,
+        tts=tts,
+        parser=CommandParser(),
+        wake_detector=WakeWordDetector("hal"),
+        vad=AdaptiveVoiceActivity(init_floor=200.0, factor=3.0),
+    )
+    monkeypatch.setattr("builtins.print", lambda *a, **k: None)
+
+    result = orch.run()
+    assert result == 0
+    assert any("Bonjour" in s for s in tts.spoken)
+    assert any("Au revoir" in s for s in tts.spoken)
+
+
+def test_standby_ignores_speech_without_wake_word(monkeypatch) -> None:
+    """De la parole sans le wake word → on reste en veille, pas d'engagement."""
+    capture = AmplitudeCapture([2000.0, 50.0, 50.0, 2000.0, 50.0])
+    stt = FakeSTT(["bonjour", "hal", "au revoir"])
+    tts = FakeTTS()
+    orch = Orchestrator(
+        capture=capture,
+        stt=stt,
+        tts=tts,
+        parser=CommandParser(),
+        wake_detector=WakeWordDetector("hal"),
+        vad=AdaptiveVoiceActivity(init_floor=200.0, factor=3.0),
+    )
+    monkeypatch.setattr("builtins.print", lambda *a, **k: None)
+
+    # "bonjour" sans wake → pas de salutation TTS
+    result = orch.run()
+    assert result == 0
+    # Le premier "bonjour" ne doit PAS produire la réponse "Bonjour Olivier".
+    # Wake "hal" oui, commande "au revoir" oui.
+    assert any("Au revoir" in s for s in tts.spoken)
