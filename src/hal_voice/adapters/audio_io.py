@@ -291,16 +291,24 @@ class AudioIO:
         return self._record_sounddevice(duration_seconds)
 
     def _record_sounddevice(self, duration_seconds: float) -> np.ndarray:
-        """Capture via sounddevice (PortAudio) — backend Windows natif."""
+        """Capture via sounddevice (PortAudio) — backend Windows natif.
+
+        Si le device est indisponible (débranché, occupé), retourne un buffer
+        de silence au lieu de crasher la boucle.
+        """
         frames = int(duration_seconds * self.sample_rate)
-        audio = sd.rec(
-            frames,
-            samplerate=self.sample_rate,
-            channels=self.channels,
-            dtype=self.dtype,
-            device=self.input_device,
-        )
-        sd.wait()
+        try:
+            audio = sd.rec(
+                frames,
+                samplerate=self.sample_rate,
+                channels=self.channels,
+                dtype=self.dtype,
+                device=self.input_device,
+            )
+            sd.wait()
+        except (sd.PortAudioError, OSError, ValueError) as e:
+            log.error("Erreur capture sounddevice : %s", e)
+            return np.zeros((frames, 1), dtype=np.int16)
         return np.asarray(audio)
 
     def _record_pulse(self, duration_seconds: float) -> np.ndarray:
@@ -389,14 +397,17 @@ class AudioIO:
             self._play_sounddevice(audio, sample_rate)
 
     def _play_sounddevice(self, audio: np.ndarray, sample_rate: int | None = None) -> None:
-        """Joue via sounddevice (PortAudio)."""
+        """Joue via sounddevice (PortAudio). Ignore les erreurs de device."""
         sr = sample_rate or self.sample_rate
-        sd.play(
-            audio,
-            samplerate=sr,
-            device=self.output_device,
-            blocking=True,
-        )
+        try:
+            sd.play(
+                audio,
+                samplerate=sr,
+                device=self.output_device,
+                blocking=True,
+            )
+        except (sd.PortAudioError, OSError, ValueError) as e:
+            log.error("Erreur lecture sounddevice : %s", e)
 
     def _play_pulse(self, audio: np.ndarray, sample_rate: int | None = None) -> None:
         """Écrit un WAV temporaire et joue via ``paplay``."""
@@ -413,6 +424,8 @@ class AudioIO:
             env["PULSE_SERVER"] = self._pulse_server
         try:
             subprocess.run(cmd, capture_output=True, check=True, env=env)
+        except (subprocess.CalledProcessError, FileNotFoundError) as e:
+            log.error("Erreur lecture paplay : %s", e)
         finally:
             Path(tmp_path).unlink(missing_ok=True)
 

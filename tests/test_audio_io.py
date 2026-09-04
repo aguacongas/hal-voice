@@ -11,6 +11,7 @@ Marqueurs pytest utilisés :
 
 from __future__ import annotations
 
+import numpy as np
 import pytest
 
 from hal_voice.adapters.audio_io import AudioIO
@@ -61,3 +62,76 @@ def test_record_returns_correct_shape() -> None:
     audio = io.record(duration_seconds=0.5)
     assert audio.shape == (int(0.5 * DEFAULT_SAMPLE_RATE), 1)
     assert audio.dtype.name == "int16"
+
+
+# ── Gestion d'erreurs audio (device indisponible) ────────────────────
+
+
+def test_record_sounddevice_returns_silence_on_error(monkeypatch) -> None:
+    """Si sounddevice échoue, _record_sounddevice renvoie du silence."""
+    io = AudioIO()
+    io._use_pulse = False
+
+    def _boom(*a, **k):
+        raise OSError("device inconnu")
+
+    monkeypatch.setattr("hal_voice.adapters.audio_io.sd.rec", _boom)
+    audio = io._record_sounddevice(1.0)
+    assert audio.dtype.name == "int16"
+    assert (audio == 0).all()
+
+
+def test_record_pulse_returns_silence_without_device() -> None:
+    """Sans device PulseAudio, record() renvoie un buffer de silence."""
+    io = AudioIO()
+    io._use_pulse = True
+    io._pulse_input = None
+    audio = io.record(duration_seconds=0.25)
+    n = int(0.25 * DEFAULT_SAMPLE_RATE)
+    assert audio.shape == (n, 1)
+    assert (audio == 0).all()
+
+
+def test_record_pulse_handles_missing_parecord(monkeypatch) -> None:
+    """Si parecord est introuvable, record() renvoie du silence."""
+    io = AudioIO()
+    io._use_pulse = True
+    io._pulse_input = "wavein"
+    io._pulse_server = None
+
+    def _raising_popen(*a, **k):
+        raise FileNotFoundError("parecord")
+
+    monkeypatch.setattr("hal_voice.adapters.audio_io.subprocess.Popen", _raising_popen)
+    audio = io.record(0.25)
+    n = int(0.25 * DEFAULT_SAMPLE_RATE)
+    assert audio.shape == (n, 1)
+    assert (audio == 0).all()
+
+
+def test_play_sounddevice_ignores_error(monkeypatch) -> None:
+    """Si la lecture sounddevice échoue, play() ne lève pas d'exception."""
+    io = AudioIO()
+    io._use_pulse = False
+
+    def _boom(*a, **k):
+        raise OSError("device indisponible")
+
+    monkeypatch.setattr("hal_voice.adapters.audio_io.sd.play", _boom)
+    data = np.zeros(100, dtype=np.int16)
+    io._play_sounddevice(data, sample_rate=16000)  # ne doit pas lever
+
+
+def test_play_pulse_ignores_paplay_error(monkeypatch, tmp_path) -> None:
+    """Si paplay échoue, play() ne lève pas d'exception."""
+    io = AudioIO()
+    io._use_pulse = True
+    io._pulse_output = "waveout"
+    io._pulse_server = None
+
+    def _raising_run(*a, **k):
+        raise FileNotFoundError("paplay")
+
+    monkeypatch.setattr("hal_voice.adapters.audio_io.subprocess.run", _raising_run)
+    data = np.zeros(100, dtype=np.int16)
+    io._play_pulse(data, sample_rate=16000)  # ne doit pas lever
