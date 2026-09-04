@@ -1,4 +1,22 @@
 #!/usr/bin/env bash
+# ══════════════════════════════════════════════════════════════════════
+# install.sh — Installeur hal-voice pour Linux / WSL2
+#
+# Ce script :
+#   1. Vérifie et installe les dépendances système (apt)
+#   2. Crée le virtual Python (.venv)
+#   3. Installe les dépendances Python
+#   4. Vérifie que tous les modules sont importables
+#   5. Télécharge le modèle Vosk FR si absent
+#
+# Utilisation :
+#   ./scripts/install.sh
+#
+# Prérequis :
+#   - Python 3.10+ et pip
+#   - Connexion internet (pour apt + modèle Vosk)
+#   - Droits sudo (pour apt install)
+# ══════════════════════════════════════════════════════════════════════
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -7,6 +25,10 @@ PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 echo "=== hal-voice — Installation ==="
 
 # ── 1. Dépendances système ───────────────────────────────────────────
+# Vérifie les packages système nécessaires :
+#   - libportaudio2 : backend audio pour sounddevice
+#   - espeak-ng     : moteur TTS pour pyttsx3 (Linux)
+#   - pulseaudio-utils : parecord/paplay pour WSL2
 echo ""
 echo "[1/4] Vérification des dépendances système..."
 
@@ -35,6 +57,7 @@ else
 fi
 
 # ── 2. Python venv ───────────────────────────────────────────────────
+# Crée un environnement virtuel Python pour isoler les dépendances.
 echo ""
 echo "[2/4] Création du virtual environment..."
 
@@ -48,6 +71,7 @@ fi
 source "$VENV_DIR/bin/activate"
 
 # ── 3. Dépendances Python ────────────────────────────────────────────
+# Installe les packages depuis requirements.txt + le package en editable.
 echo ""
 echo "[3/4] Installation des dépendances Python..."
 pip install --upgrade pip -q
@@ -56,6 +80,7 @@ pip install -e "$PROJECT_DIR" -q
 echo "  OK — packages installés."
 
 # ── 4. Vérification ──────────────────────────────────────────────────
+# Vérifie que chaque module critique est importable.
 echo ""
 echo "[4/4] Vérification..."
 
@@ -66,6 +91,7 @@ python -c "import pynput"       2>/dev/null || { echo "  ✗ pynput"; exit 1; }
 echo "  OK — tous les modules Python sont importables."
 
 # ── Modèle Vosk ──────────────────────────────────────────────────────
+# Télécharge le modèle de reconnaissance vocale français (~40 Mo).
 MODEL_DIR="$PROJECT_DIR/models/vosk-model-small-fr-0.22"
 if [ -d "$MODEL_DIR" ]; then
     echo "  OK — modèle Vosk FR présent."
