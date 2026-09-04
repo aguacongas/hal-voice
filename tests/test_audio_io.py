@@ -13,12 +13,8 @@ from __future__ import annotations
 
 import pytest
 
-from hal_voice.audio_io import (
-    DEFAULT_CHANNELS,
-    DEFAULT_DTYPE,
-    DEFAULT_SAMPLE_RATE,
-    AudioIO,
-)
+from hal_voice.adapters.audio_io import AudioIO
+from hal_voice.domain.config import DEFAULT_CHANNELS, DEFAULT_DTYPE, DEFAULT_SAMPLE_RATE
 
 
 def test_default_constants() -> None:

@@ -17,8 +17,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-import hal_voice.tts_sapi as tts_mod
-from hal_voice.tts_sapi import FRENCH_LANG_ID, TTS, _lang_id_to_int
+import hal_voice.adapters.tts as tts_mod
+from hal_voice.adapters.tts import FRENCH_LANG_ID, TTS, _lang_id_to_int
 
 
 def _make_fake_speaker():

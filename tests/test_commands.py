@@ -7,7 +7,8 @@ depuis le texte transcrit par le STT. Pas de dépendance matérielle.
 
 from __future__ import annotations
 
-from hal_voice.commands import CommandParser, Intent
+from hal_voice.domain.entities import Intent
+from hal_voice.use_cases.command_parser import CommandParser
 
 
 def test_parse_empty_returns_none() -> None:

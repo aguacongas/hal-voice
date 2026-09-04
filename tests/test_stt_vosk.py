@@ -12,8 +12,8 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from hal_voice.config import Config
-from hal_voice.stt_vosk import STT
+from hal_voice.adapters.config_loader import load_config_from_env
+from hal_voice.adapters.stt_vosk import STT
 
 
 def test_instantiation_unloaded() -> None:
@@ -52,17 +52,17 @@ def test_transcribe_array_without_load_triggers_load(monkeypatch) -> None:
 
 
 def test_config_from_env_default(monkeypatch) -> None:
-    """Config.from_env() utilise les valeurs par défaut si pas de variable d'env."""
+    """load_config_from_env() utilise les valeurs par défaut si pas de variable d'env."""
     monkeypatch.delenv("HAL_VOICE_MODEL_PATH", raising=False)
-    cfg = Config.from_env()
+    cfg = load_config_from_env()
     assert cfg.vosk_model_path.name == "vosk-model-small-fr-0.22"
     assert cfg.sample_rate == 16000
 
 
 def test_config_from_env_override(monkeypatch, tmp_path) -> None:
-    """Config.from_env() lit les variables d'environnement si définies."""
+    """load_config_from_env() lit les variables d'environnement si définies."""
     monkeypatch.setenv("HAL_VOICE_MODEL_PATH", str(tmp_path / "custom_model"))
     monkeypatch.setenv("HAL_VOICE_SAMPLE_RATE", "8000")
-    cfg = Config.from_env()
+    cfg = load_config_from_env()
     assert cfg.vosk_model_path == tmp_path / "custom_model"
     assert cfg.sample_rate == 8000
