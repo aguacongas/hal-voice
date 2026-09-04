@@ -27,14 +27,17 @@ for arg in "$@"; do
             echo "  --check  Affiche ce qui serait supprimé sans rien faire"
             exit 0
             ;;
+        *)
+            echo "Option inconnue : $arg (ignorée)" >&2
+            ;;
     esac
 done
 
 # ── Couleurs ─────────────────────────────────────────────────────────
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[0;33m'; NC='\033[0m'
-ok()   { echo -e "  ${GREEN}✓${NC} $1"; }
-warn() { echo -e "  ${YELLOW}!${NC} $1"; }
-info() { echo -e "  → $1"; }
+ok()   { local msg="$1"; echo -e "  ${GREEN}✓${NC} $msg"; }
+warn() { local msg="$1"; echo -e "  ${YELLOW}!${NC} $msg"; }
+info() { local msg="$1"; echo -e "  → $msg"; }
 
 echo "══════════════════════════════════════"
 echo "  hal-voice — Désinstallation"
@@ -47,7 +50,7 @@ echo ""
 echo "── 1. Virtual environment ──"
 
 VENV_DIR="$PROJECT_DIR/.venv"
-if [ -d "$VENV_DIR" ]; then
+if [[ -d "$VENV_DIR" ]]; then
     if $CHECK_ONLY; then
         info "Supprimer : $VENV_DIR"
     else
@@ -65,7 +68,7 @@ echo ""
 echo "── 2. Modèle Vosk FR ──"
 
 MODEL_DIR="$PROJECT_DIR/models/vosk-model-small-fr-0.22"
-if [ -d "$MODEL_DIR" ]; then
+if [[ -d "$MODEL_DIR" ]]; then
     if $CHECK_ONLY; then
         info "Supprimer : $MODEL_DIR (~40 Mo)"
     else
@@ -77,8 +80,8 @@ else
 fi
 
 # Nettoie le dossier models s'il est vide
-if [ -d "$PROJECT_DIR/models" ]; then
-    [ -z "$(ls -A "$PROJECT_DIR/models" 2>/dev/null)" ] && rmdir "$PROJECT_DIR/models"
+if [[ -d "$PROJECT_DIR/models" ]]; then
+    [[ -z "$(ls -A "$PROJECT_DIR/models" 2>/dev/null)" ]] && rmdir "$PROJECT_DIR/models"
 fi
 
 # ══════════════════════════════════════════════════════════════════════
@@ -99,7 +102,7 @@ for pattern in "__pycache__" "*.pyc" "*.pyo" ".pytest_cache" "*.egg-info"; do
     done < <(find "$PROJECT_DIR" -name "$pattern" -not -path "*/.git/*" -print0 2>/dev/null)
 done
 
-if [ $CLEANED -gt 0 ]; then
+if [[ $CLEANED -gt 0 ]]; then
     ok "$CLEANED éléments nettoyés"
 else
     ok "déjà propre"
@@ -113,19 +116,19 @@ echo "── 4. Dépendances système ──"
 
 if ! $FULL_REMOVE; then
     info "Utilise --full pour supprimer les paquets système"
-    info "Conservés : libportaudio2, espeak-ng, curl, unzip, pulseaudio-utils"
+    info "Conservés : espeak-ng, curl, unzip, pulseaudio-utils"
 else
     PACKAGES_TO_REMOVE=()
 
     # Vérifie chaque paquet avant de le supprimer
-    for pkg in libportaudio2 espeak-ng curl unzip pulseaudio-utils; do
+    for pkg in espeak-ng curl unzip pulseaudio-utils; do
         if dpkg -l "$pkg" 2>/dev/null | grep -q "^ii"; then
             PACKAGES_TO_REMOVE+=("$pkg")
             info "à supprimer : $pkg"
         fi
     done
 
-    if [ ${#PACKAGES_TO_REMOVE[@]} -gt 0 ]; then
+    if [[ ${#PACKAGES_TO_REMOVE[@]} -gt 0 ]]; then
         if $CHECK_ONLY; then
             info "sudo apt remove -y ${PACKAGES_TO_REMOVE[*]}"
         else
@@ -141,7 +144,7 @@ else
     if grep -qi microsoft /proc/version 2>/dev/null; then
         PA_DIR="${LOCALAPPDATA:-/mnt/c/Users/*/AppData/Local}/pulseaudio/pulseaudio"
         PA_EXPANDED=$(eval echo "$PA_DIR" 2>/dev/null | head -1)
-        if [ -d "$PA_EXPANDED" ]; then
+        if [[ -d "$PA_EXPANDED" ]]; then
             if $CHECK_ONLY; then
                 info "PulseAudio Windows : $PA_EXPANDED (suppression manuelle requise)"
             else

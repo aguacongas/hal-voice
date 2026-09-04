@@ -11,7 +11,7 @@ Python 3.10+ app: 100% local voice assistant — STT (Vosk, French offline) + TT
 
 ## Commands
 
-- Main loop: `./scripts/run.sh` (WSL2/Linux) or `python -m hal_voice`. `run.sh` creates/uses `.venv` and `pip install -e`.
+- Main loop: `./scripts/run.sh` (WSL2/Linux) or `python -m hal_voice`. `run.sh` uses **uv** (`uv sync --extra dev` from `uv.lock`) to create/use `.venv`.
 - **Diagnose PulseAudio under WSL**: `python -m hal_voice --diagnose` (or `./scripts/run.sh --diagnose`) → lists sources, chosen device, and does a 3 s capture reporting `max_amplitude`. **Always run this first when investigating mic issues.**
 - Quick audio smoke test (record 3 s + replay): `python -m hal_voice.audio_io` (runs `quick_test()`).
 - Silent mode (test STT without speaking): `./scripts/run.sh --silent`.

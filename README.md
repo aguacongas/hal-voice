@@ -83,8 +83,8 @@ hal-voice/
 ├── scripts/               ← install/uninstall/setup/teardown/run
 ├── docs/                  ← architecture, install, usage, roadmap
 ├── models/                ← modèle Vosk (gitignored)
-├── requirements.txt
 ├── pyproject.toml
+├── uv.lock                ← dépendances verrouillées (uv sync)
 └── LICENSE                ← Apache 2.0
 ```
 

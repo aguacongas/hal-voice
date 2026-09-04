@@ -92,7 +92,12 @@ def _is_france(value: str | int) -> bool:
     return parts[-1] == "fr" and not parts[-1].endswith(("be", "ch"))
 
 
-def _select_voice(setter, voices, voice_name: str | None, get_desc, get_attr, set_prop) -> str:
+def _find_matching_voice(voices, predicate) -> object | None:
+    """Renvoie la première voix satisfaisant ``predicate``, sinon None."""
+    return next((v for v in voices if predicate(v)), None)
+
+
+def _select_voice(voices, voice_name: str | None, get_desc, get_attr, set_prop) -> str:
     """Logique commune de sélection de voix.
 
     1. Si voice_name fourni → cherche par nom
@@ -102,28 +107,19 @@ def _select_voice(setter, voices, voice_name: str | None, get_desc, get_attr, se
     """
     target = None
     if voice_name:
-        for v in voices:
-            if voice_name.lower() in get_desc(v).lower():
-                target = v
-                break
+        target = _find_matching_voice(voices, lambda v: voice_name.lower() in get_desc(v).lower())
         if target is None:
             log.warning("Voix %r introuvable, fallback sur la 1ere voix FR.", voice_name)
 
     # Priorité : français de France
     if target is None:
-        for v in voices:
-            if _is_france(get_attr(v)):
-                target = v
-                break
+        target = _find_matching_voice(voices, lambda v: _is_france(get_attr(v)))
         if target is not None:
             log.info("Voix FR (France) trouvée.")
 
     # Sinon : n'importe quel français
     if target is None:
-        for v in voices:
-            if _is_french(get_attr(v)):
-                target = v
-                break
+        target = _find_matching_voice(voices, lambda v: _is_french(get_attr(v)))
 
     if target is None and voices:
         target = voices[0]
@@ -261,7 +257,6 @@ class _Pyttsx3Backend:
         self._voice_name = ""
         voices = self._engine.getProperty("voices")
         self._voice_name = _select_voice(
-            self._engine,
             voices,
             voice_name,
             lambda v: v.name,
