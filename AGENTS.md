@@ -45,6 +45,12 @@ Resulting audio is mono int16 at the configured rate, fed to Vosk (`stt_vosk.py`
 
 `tts_sapi.py`: Windows → SAPI5 via `win32com`; Linux/WSL → `pyttsx3` (needs `espeak-ng`). Log line `Voix TTS selectionnee : ...` appears at startup.
 
+## Session notes
+
+- `docs/SESSION-RESUME-INSTRUCTIONS.md` — **read this first** to resume work. Contains runtime state, quick tests, and next steps.
+- `docs/SESSION-NOTES-2026-09-03.md` — initial WSL2/PulseAudio setup, gotchas, outstanding items.
+- `docs/SESSION-NOTES-2026-09-04.md` — auto-detection, duplicate module-waveout fix, comments, docs.
+
 ## Conventions
 
 - French docstrings/comments and log messages throughout.
