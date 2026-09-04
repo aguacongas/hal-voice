@@ -1,29 +1,28 @@
 """
-adapters.tts — Text-to-Speech multi-plateforme (implémentation concrète).
+adapters.tts — Text-to-Speech (implémentation concrète).
 
-Windows : SAPI 5 via win32com (zéro installation, voix système).
-Linux/WSL : pyttsx3 + eSpeak-ng (nécessite ``apt install espeak-ng``).
+Cible : Linux/WSL2 uniquement — pyttsx3 + eSpeak-ng
+(nécessite ``apt install espeak-ng``).
+
+Le support Windows natif (SAPI 5 / win32com) a été retiré : l'app
+tourne sous WSL2 et l'audio passe par PulseAudio for Windows (hôte),
+pas par les voix SAPI de Windows.
 
 Vérifie le protocole domain.protocols.ITTS.
 
 Architecture :
-    TTS est une facade qui délègue au bon backend selon la plateforme.
-    - _SapiBackend : Windows SAPI 5 via COM (win32com.client)
-    - _Pyttsx3Backend : pyttsx3 (wrapper multi-plateforme, utilise eSpeak sous Linux)
+    TTS est une facade qui délègue au backend _Pyttsx3Backend
+    (pyttsx3, qui utilise eSpeak-ng sous Linux).
 
 Sélection de la voix :
     - Si voice_name est fourni, on cherche la voix correspondante
     - Sinon, on prend la voix FRANCE prioritaire (Sinon Belgique/Suisse)
     - Fallback : la première voix du système
 
-Flags SAPI 5 :
-    - SPF_ASYNC (1) : lecture asynchrone (non bloquant)
-    - SPF_PURGEBEFORESPEAK (2) : purge la file avant de parler
-
 WSL2 / PulseAudio :
     eSpeak-ng utilise ALSA par défaut pour la sortie audio. Sous WSL2,
     ALSA n'a pas de carte son → erreurs. Fix : on force PulseAudio via
-    les variables d'environnement PULSE_SERVER + ESPEAK_DATA_PATH avant
+    les variables d'environnement PULSE_SERVER + un ~/.asoundrc avant
     l'initialisation de pyttsx3.
 """
 
@@ -31,29 +30,19 @@ from __future__ import annotations
 
 import logging
 import os
-import sys
 from pathlib import Path
 
 log = logging.getLogger(__name__)
 
-# Import conditionnel de win32com (Windows only)
-_win32com = None
-if sys.platform == "win32":
-    try:
-        import win32com.client as _win32com  # type: ignore[no-redef]
-    except ImportError:
-        log.warning("win32com non disponible. TTS SAPI 5 désactivé.")
-
-# Identifiant de langue français pour SAPI 5 (0x040C = 1036)
+# Identifiant de langue français (0x040C = 1036)
 FRENCH_LANG_ID = 0x040C
 
 
 def _lang_id_to_int(value: str | int) -> int:
-    """Convertit un identifiant de langue SAPI en entier.
+    """Convertit un identifiant de langue en entier (utile aux voix eSpeak).
 
-    SAPI renvoie l'attribut Language comme string hexadécimale ('40C')
-    ou parfois comme un entier. pyttsx3 peut retourner des tags BCP 47
-    (ex: 'gmw/af') qui ne sont pas hex → on retourne 0 dans ce cas.
+    Accepte les strings hexadécimales ('40C') et les entiers.
+    Les tags BCP 47 (ex: 'roa/fr') ne sont pas hex → retourne 0.
     """
     if isinstance(value, int):
         return value
@@ -66,16 +55,16 @@ def _lang_id_to_int(value: str | int) -> int:
 def _is_french(value: str | int) -> bool:
     """Détecte si un identifiant de langue correspond au français.
 
-    Gère les trois formats :
-    - SAPI 5 : hex string ('40C') ou entier (1036) → compare avec FRENCH_LANG_ID
+    Gère deux formats :
+    - hex SAPI : string hex ('40C') ou entier (1036) → FRENCH_LANG_ID
     - pyttsx3/eSpeak : IDs BCP 47 ('roa/fr', 'roa/fr-be', 'fr', 'fra')
       → vérifie la présence d'un tag 'fr' isolé
     """
     if isinstance(value, int):
         return value == FRENCH_LANG_ID
-    # SAPI hex
     try:
-        return int(value, 16) == FRENCH_LANG_ID
+        if int(value, 16) == FRENCH_LANG_ID:
+            return True
     except (ValueError, TypeError):
         pass
     # BCP 47 / eSpeak : token 'fr' (fr, fr-fr, fr/roa, roa/fr, fra...)
@@ -87,7 +76,7 @@ def _is_french(value: str | int) -> bool:
 def _is_france(value: str | int) -> bool:
     """Détecte spécifiquement le français de France (pas Belgique/Suisse).
 
-    - SAPI 5 : LANGID 0x040C (1036) correspond au français (France).
+    - hex SAPI : LANGID 0x040C (1036) = français (France).
     - eSpeak : 'roa/fr' (France) vs 'roa/fr-be' / 'roa/fr-ch'.
     """
     if isinstance(value, int):
@@ -152,7 +141,8 @@ def _configure_pulse_for_espeak() -> None:
 
     eSpeak-ng utilise ALSA par défaut. Sous WSL2, ALSA n'a pas de carte
     son → erreurs ALSA. Cette fonction force eSpeak à utiliser PulseAudio
-    Windows (TCP) au lieu de WSLg ou ALSA.
+    (via le serveur PulseAudio for Windows de l'hôte) au lieu de WSLg
+    ou ALSA.
 
     À appeler AVANT l'import de pyttsx3.
     """
@@ -166,7 +156,7 @@ def _configure_pulse_for_espeak() -> None:
     if not is_wsl:
         return
 
-    # Récupère l'IP Windows (gateway)
+    # Récupère l'IP de l'hôte Windows (gateway)
     import subprocess
 
     try:
@@ -179,7 +169,7 @@ def _configure_pulse_for_espeak() -> None:
 
     tcp_server = f"tcp:{host_ip}"
 
-    # Teste si PulseAudio Windows (TCP) est accessible — préféré à WSLg
+    # Teste si PulseAudio (TCP) est accessible
     try:
         subprocess.run(
             ["pactl", "info"],
@@ -189,19 +179,19 @@ def _configure_pulse_for_espeak() -> None:
             check=True,
         )
     except (subprocess.CalledProcessError, FileNotFoundError, subprocess.TimeoutExpired):
-        log.warning("PulseAudio Windows inaccessible — eSpeak peut échouer (erreurs ALSA)")
+        log.warning("PulseAudio inaccessible — eSpeak peut échouer (erreurs ALSA)")
         return
 
-    # Force eSpeak-ng à utiliser PulseAudio Windows
+    # Force eSpeak-ng à utiliser PulseAudio
     os.environ["PULSE_SERVER"] = tcp_server
 
     # Redirige le device ALSA par défaut vers PulseAudio.
     # pyttsx3/eSpeak joue l'audio via `aplay <wav>` (ALSA sans -D).
     # Sans carte son, ALSA échoue ("cannot find card 0"). Un ~/.asoundrc
     # qui pointe `pcm.!default` vers le plugin `pulse` (libasound2-plugins)
-    # fait passer aplay par PulseAudio + PULSE_SERVER Windows → audible.
+    # fait passer aplay par PulseAudio + PULSE_SERVER → audible.
     _write_asoundrc()
-    log.info("eSpeak configuré pour PulseAudio Windows : %s", tcp_server)
+    log.info("eSpeak configuré pour PulseAudio : %s", tcp_server)
 
 
 _ASOUNDRC = """\
@@ -235,18 +225,11 @@ def _write_asoundrc() -> None:
 
 
 class TTS:
-    """Wrapper TTS multi-plateforme.
-
-    SAPI 5 sur Windows, pyttsx3+eSpeak sur Linux/WSL.
-    Le backend est choisi automatiquement selon ``sys.platform``.
-    """
+    """Wrapper TTS (pyttsx3 + eSpeak-ng) — Linux/WSL2."""
 
     def __init__(self, voice_name: str | None = None) -> None:
-        if sys.platform == "win32":
-            self._backend = _SapiBackend(voice_name)
-        else:
-            _configure_pulse_for_espeak()
-            self._backend = _Pyttsx3Backend(voice_name)
+        _configure_pulse_for_espeak()
+        self._backend = _Pyttsx3Backend(voice_name)
 
     def list_voices(self) -> list[dict]:
         """Renvoie la liste des voix disponibles."""
@@ -266,44 +249,6 @@ class TTS:
     def voice_name(self) -> str:
         """Description de la voix actuellement sélectionnée."""
         return self._backend.voice_name
-
-
-class _SapiBackend:
-    """Windows SAPI 5 via COM."""
-
-    def __init__(self, voice_name: str | None = None) -> None:
-        self._speaker = _win32com.Dispatch("SAPI.SpVoice")
-        self._voices = self._speaker.GetVoices()
-        self._voice_name = _select_voice(
-            self._speaker,
-            range(self._voices.Count),
-            voice_name,
-            lambda i: self._voices.Item(i).GetDescription(),
-            lambda i: self._voices.Item(i).GetAttribute("Language"),
-            lambda v: setattr(self._speaker, "Voice", v),
-        )
-
-    def list_voices(self) -> list[dict]:
-        result: list[dict] = []
-        for i in range(self._voices.Count):
-            v = self._voices.Item(i)
-            result.append({
-                "index": i,
-                "description": v.GetDescription(),
-                "language_id": _lang_id_to_int(v.GetAttribute("Language")),
-            })
-        return result
-
-    def speak(self, text: str, blocking: bool) -> None:
-        flags = 0 if blocking else 1
-        self._speaker.Speak(text, flags)
-
-    def stop(self) -> None:
-        self._speaker.Speak("", 2)
-
-    @property
-    def voice_name(self) -> str:
-        return self._voice_name
 
 
 class _Pyttsx3Backend:
@@ -330,7 +275,7 @@ class _Pyttsx3Backend:
             result.append({
                 "index": i,
                 "description": v.name,
-                "language_id": 0,
+                "language_id": _lang_id_to_int(v.id),
             })
         return result
 

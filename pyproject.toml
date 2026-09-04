@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "hal-voice"
 version = "0.1.0"
-description = "100% local voice interface — STT (Vosk FR) + TTS (SAPI/pyttsx3). No cloud, no API key."
+description = "100% local voice interface (WSL2) — STT (Vosk FR) + TTS (pyttsx3/eSpeak). No cloud, no API key."
 readme = "README.md"
 license = { file = "LICENSE" }
 requires-python = ">=3.10"
@@ -13,12 +13,10 @@ authors = [{ name = "Olivier Lefebvre" }]
 keywords = ["voice", "stt", "tts", "vosk", "offline", "french", "hal"]
 classifiers = [
     "Development Status :: 3 - Alpha",
-    "Environment :: Win32 (MS Windows)",
-    "Environment :: X11 Applications :: Linux",
+    "Environment :: Console",
     "Intended Audience :: Developers",
     "License :: OSI Approved :: Apache Software License",
     "Natural Language :: French",
-    "Operating System :: Microsoft :: Windows :: Windows 11",
     "Operating System :: POSIX :: Linux",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.10",
@@ -28,12 +26,10 @@ classifiers = [
     "Topic :: Multimedia :: Sound/Audio :: Speech",
 ]
 dependencies = [
-    "sounddevice>=0.5.6",
     "soundfile>=0.14.0",
     "vosk>=0.3.45",
     "pyyaml>=6.0.2",
-    "pywin32>=306; sys_platform == 'win32'",
-    "pyttsx3>=2.99; sys_platform != 'win32'",
+    "pyttsx3>=2.99",
     "pynput>=1.8.2",
 ]
 
@@ -55,7 +51,6 @@ testpaths = ["tests"]
 addopts = "-ra -q"
 markers = [
     "requires_hardware: tests qui dependent d'un micro/casque reel",
-    "requires_windows: tests qui dependent de Windows (SAPI 5, COM)",
 ]
 
 [tool.ruff]

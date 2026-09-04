@@ -1,17 +1,13 @@
-# Audio I/O
-sounddevice>=0.5.6
+# Audio I/O (lecture/écriture WAV)
 soundfile>=0.14.0
 
 # Speech-to-Text (Vosk, offline FR)
 vosk>=0.3.45
 
-# Windows-specific (TTS SAPI + hotkey global)
-pywin32>=306; sys_platform == "win32"
+# Text-to-Speech (pyttsx3 + eSpeak-ng)
+pyttsx3>=2.99
 
-# Linux/WSL-specific (TTS pyttsx3 + eSpeak)
-pyttsx3>=2.99; sys_platform != "win32"
-
-# Hotkey cross-platform
+# Hotkey global
 pynput>=1.8.2
 
 # Config

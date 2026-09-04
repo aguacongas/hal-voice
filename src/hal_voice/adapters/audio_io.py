@@ -3,13 +3,12 @@ adapters.audio_io — Capture micro + lecture audio (implémentation concrète).
 
 Vérifie les protocoles IAudioCapture et IAudioPlayback.
 
-Cross-platform : sounddevice (PortAudio) par défaut, fallback PulseAudio
-(parecord/paplay) sur WSL2.
+Cible : Linux/WSL2. L'audio passe par PulseAudio (parecord/paplay).
 
 Architecture :
-    - Windows natif  → sounddevice (PortAudio) fonctionne directement.
-    - WSL2           → sounddevice ne voit pas le micro Windows. On utilise
-      PulseAudio for Windows (build pgaskin) qui expose le micro via TCP 4713.
+    - WSL2 → PulseAudio for Windows (build pgaskin) expose le micro
+      (module-waveout) et les haut-parleurs (sink waveout) via TCP 4713.
+      On capture avec ``parecord`` et on joue avec ``paplay``.
 
     Pièges connus :
         - ``parecord`` sous WSL n'a PAS d'option ``--duration``
@@ -31,7 +30,6 @@ import time
 from pathlib import Path
 
 import numpy as np
-import sounddevice as sd
 import soundfile as sf
 
 from hal_voice.domain.config import DEFAULT_CHANNELS, DEFAULT_DTYPE, DEFAULT_SAMPLE_RATE
@@ -236,8 +234,8 @@ def _pulse_find_output_device(server: str | None = None) -> str | None:
 class AudioIO:
     """Helper pour capturer et lire de l'audio en PCM.
 
-    Abstraction au-dessus de sounddevice (PortAudio) et PulseAudio.
-    Dispatche automatiquement entre les deux backends.
+    Abstraction au-dessus de PulseAudio (parecord/paplay).
+    On est sur Linux/WSL2 : pas de backend noise/sounddevice.
     """
 
     def __init__(
@@ -254,62 +252,42 @@ class AudioIO:
         self.input_device = input_device
         self.output_device = output_device
 
-        self._use_pulse = _is_wsl() and shutil.which("parecord") is not None
+        self._use_pulse = True
         self._pulse_server: str | None = None
         self._pulse_input: str | None = None
         self._pulse_output: str | None = None
 
-        if self._use_pulse:
-            self._pulse_server = _pulse_find_server()
-            self._pulse_input = _pulse_find_input_device(self._pulse_server)
-            self._pulse_output = _pulse_find_output_device(self._pulse_server)
-            log.info(
-                "WSL2 — server=%s input=%s output=%s",
-                self._pulse_server or "WSLg (défaut)",
-                self._pulse_input,
-                self._pulse_output,
-            )
+        if shutil.which("parecord") is None:
+            log.error("parecord introuvable — installe pulseaudio-utils")
+            return
+
+        self._pulse_server = _pulse_find_server()
+        self._pulse_input = _pulse_find_input_device(self._pulse_server)
+        self._pulse_output = _pulse_find_output_device(self._pulse_server)
+        log.info(
+            "Server=%s input=%s output=%s",
+            self._pulse_server or "WSLg (défaut)",
+            self._pulse_input,
+            self._pulse_output,
+        )
 
     def list_devices(self) -> list[dict]:
-        """Retourne la liste des devices audio détectés (sounddevice)."""
-        return sd.query_devices()  # type: ignore[return-value]
+        """Retourne la liste des sources PulseAudio détectées."""
+        return _pulse_list_sources(self._pulse_server)
 
     def default_input_name(self) -> str:
-        """Retourne le nom du device d'entrée par défaut."""
-        return sd.query_devices(kind="input")["name"]  # type: ignore[index]
+        """Retourne le nom du device d'entrée sélectionné."""
+        return self._pulse_input or ""
 
     def default_output_name(self) -> str:
-        """Retourne le nom du device de sortie par défaut."""
-        return sd.query_devices(kind="output")["name"]  # type: ignore[index]
+        """Retourne le nom du device de sortie sélectionné."""
+        return self._pulse_output or ""
 
     # ── Capture ──────────────────────────────────────────────────────
 
     def record(self, duration_seconds: float) -> np.ndarray:
         """Capture ``duration_seconds`` du micro et renvoie un numpy array int16 mono."""
-        if self._use_pulse:
-            return self._record_pulse(duration_seconds)
-        return self._record_sounddevice(duration_seconds)
-
-    def _record_sounddevice(self, duration_seconds: float) -> np.ndarray:
-        """Capture via sounddevice (PortAudio) — backend Windows natif.
-
-        Si le device est indisponible (débranché, occupé), retourne un buffer
-        de silence au lieu de crasher la boucle.
-        """
-        frames = int(duration_seconds * self.sample_rate)
-        try:
-            audio = sd.rec(
-                frames,
-                samplerate=self.sample_rate,
-                channels=self.channels,
-                dtype=self.dtype,
-                device=self.input_device,
-            )
-            sd.wait()
-        except (sd.PortAudioError, OSError, ValueError) as e:
-            log.error("Erreur capture sounddevice : %s", e)
-            return np.zeros((frames, 1), dtype=np.int16)
-        return np.asarray(audio)
+        return self._record_pulse(duration_seconds)
 
     def _record_pulse(self, duration_seconds: float) -> np.ndarray:
         """Capture via parecord (PulseAudio) en PCM brut s16le."""
@@ -391,23 +369,7 @@ class AudioIO:
 
     def play(self, audio: np.ndarray, sample_rate: int | None = None) -> None:
         """Joue un buffer audio. Bloquant jusqu'à la fin de la lecture."""
-        if self._use_pulse:
-            self._play_pulse(audio, sample_rate)
-        else:
-            self._play_sounddevice(audio, sample_rate)
-
-    def _play_sounddevice(self, audio: np.ndarray, sample_rate: int | None = None) -> None:
-        """Joue via sounddevice (PortAudio). Ignore les erreurs de device."""
-        sr = sample_rate or self.sample_rate
-        try:
-            sd.play(
-                audio,
-                samplerate=sr,
-                device=self.output_device,
-                blocking=True,
-            )
-        except (sd.PortAudioError, OSError, ValueError) as e:
-            log.error("Erreur lecture sounddevice : %s", e)
+        self._play_pulse(audio, sample_rate)
 
     def _play_pulse(self, audio: np.ndarray, sample_rate: int | None = None) -> None:
         """Écrit un WAV temporaire et joue via ``paplay``."""
@@ -523,15 +485,10 @@ def pulse_diagnostics() -> None:
 def quick_test() -> None:
     """Boucle 5s : record 3s, replay, affiche devices. Pour test manuel."""
     io = AudioIO()
-    backend = "PulseAudio (parecord)" if io._use_pulse else "sounddevice (PortAudio)"
-    print(f"Backend : {backend}")
-    if io._use_pulse:
-        print(f"PulseAudio server : {io._pulse_server or 'WSLg (défaut)'}")
-        print(f"PulseAudio input  : {io._pulse_input}")
-        print(f"PulseAudio output : {io._pulse_output}")
-    else:
-        print(f"Input par défaut  : {io.default_input_name()}")
-        print(f"Output par défaut : {io.default_output_name()}")
+    print("Backend : PulseAudio (parecord/paplay)")
+    print(f"PulseAudio server : {io._pulse_server or 'WSLg (défaut)'}")
+    print(f"PulseAudio input  : {io._pulse_input}")
+    print(f"PulseAudio output : {io._pulse_output}")
     print("Capture 3 sec...")
     audio = io.record(3.0)
     max_amp = int(np.abs(audio).max())

@@ -1,8 +1,8 @@
 """
-adapters.hotkey — Raccourcis clavier globaux via pynput (cross-platform).
+adapters.hotkey — Raccourcis clavier globaux via pynput.
 
 Implémentation concrète du monitoring des raccourcis clavier.
-Fonctionne sur Windows, Linux et macOS.
+Fonctionne sur Linux et WSL2.
 
 Limitations :
     - Les combos avec modifiers ne vérifient que la dernière touche

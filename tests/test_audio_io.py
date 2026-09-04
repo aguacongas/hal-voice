@@ -3,10 +3,6 @@ Tests audio_io — sans dépendance matérielle pour les tests unitaires.
 
 Les tests qui capturent réellement le micro sont marqués ``requires_hardware``
 et ne sont joués que sur les machines avec une carte son active.
-
-Marqueurs pytest utilisés :
-    - requires_hardware : nécessite un micro fonctionnel
-    - requires_windows  : spécifique à Windows (SAPI 5, PortAudio)
 """
 
 from __future__ import annotations
@@ -42,13 +38,13 @@ def test_instantiation_accepts_overrides() -> None:
 
 
 def test_list_devices_returns_list() -> None:
-    """list_devices() retourne au moins un device audio."""
+    """list_devices() retourne la liste des sources PulseAudio."""
     io = AudioIO()
     devices = io.list_devices()
-    # sounddevice renvoie un DeviceList (sequence-like), pas une vraie list
-    assert len(devices) >= 1
-    assert devices[0]["name"]
-    assert "max_input_channels" in devices[0]
+    assert isinstance(devices, list)
+    if devices:
+        assert "name" in devices[0]
+        assert "index" in devices[0]
 
 
 @pytest.mark.requires_hardware
@@ -67,24 +63,9 @@ def test_record_returns_correct_shape() -> None:
 # ── Gestion d'erreurs audio (device indisponible) ────────────────────
 
 
-def test_record_sounddevice_returns_silence_on_error(monkeypatch) -> None:
-    """Si sounddevice échoue, _record_sounddevice renvoie du silence."""
-    io = AudioIO()
-    io._use_pulse = False
-
-    def _boom(*a, **k):
-        raise OSError("device inconnu")
-
-    monkeypatch.setattr("hal_voice.adapters.audio_io.sd.rec", _boom)
-    audio = io._record_sounddevice(1.0)
-    assert audio.dtype.name == "int16"
-    assert (audio == 0).all()
-
-
 def test_record_pulse_returns_silence_without_device() -> None:
     """Sans device PulseAudio, record() renvoie un buffer de silence."""
     io = AudioIO()
-    io._use_pulse = True
     io._pulse_input = None
     audio = io.record(duration_seconds=0.25)
     n = int(0.25 * DEFAULT_SAMPLE_RATE)
@@ -95,7 +76,6 @@ def test_record_pulse_returns_silence_without_device() -> None:
 def test_record_pulse_handles_missing_parecord(monkeypatch) -> None:
     """Si parecord est introuvable, record() renvoie du silence."""
     io = AudioIO()
-    io._use_pulse = True
     io._pulse_input = "wavein"
     io._pulse_server = None
 
@@ -109,23 +89,9 @@ def test_record_pulse_handles_missing_parecord(monkeypatch) -> None:
     assert (audio == 0).all()
 
 
-def test_play_sounddevice_ignores_error(monkeypatch) -> None:
-    """Si la lecture sounddevice échoue, play() ne lève pas d'exception."""
-    io = AudioIO()
-    io._use_pulse = False
-
-    def _boom(*a, **k):
-        raise OSError("device indisponible")
-
-    monkeypatch.setattr("hal_voice.adapters.audio_io.sd.play", _boom)
-    data = np.zeros(100, dtype=np.int16)
-    io._play_sounddevice(data, sample_rate=16000)  # ne doit pas lever
-
-
 def test_play_pulse_ignores_paplay_error(monkeypatch, tmp_path) -> None:
     """Si paplay échoue, play() ne lève pas d'exception."""
     io = AudioIO()
-    io._use_pulse = True
     io._pulse_output = "waveout"
     io._pulse_server = None
 
