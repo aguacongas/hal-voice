@@ -24,15 +24,7 @@ def test_instantiation_unloaded() -> None:
 
 def test_load_missing_model_raises(tmp_path: pytest.TempPathFactory) -> None:
     """load() avec un chemin inexistant lève FileNotFoundError."""
-
-    cfg = Config(
-        vosk_model_path=tmp_path / "does_not_exist",  # type: ignore[arg-type]
-        sample_rate=16000,
-        channels=1,
-        dtype="int16",
-        wake_word="hal",
-    )
-    stt = STT(cfg)
+    stt = STT(model_path=tmp_path / "does_not_exist", sample_rate=16000)
     with pytest.raises(FileNotFoundError, match="Modèle Vosk introuvable"):
         stt.load()
 
