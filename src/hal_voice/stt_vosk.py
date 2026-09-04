@@ -10,12 +10,11 @@ from __future__ import annotations
 import json
 import logging
 from pathlib import Path
-from typing import Optional
 
 import numpy as np
 from vosk import KaldiRecognizer, Model, SetLogLevel
 
-from .config import Config, DEFAULT_SAMPLE_RATE
+from .config import DEFAULT_SAMPLE_RATE, Config
 
 log = logging.getLogger(__name__)
 
@@ -26,14 +25,14 @@ SetLogLevel(-1)
 class STT:
     """Wrapper STT basé sur Vosk."""
 
-    def __init__(self, config: Optional[Config] = None) -> None:
+    def __init__(self, config: Config | None = None) -> None:
         cfg = config or Config.from_env()
         self._config = cfg
-        self._model: Optional[Model] = None
-        self._recognizer: Optional[KaldiRecognizer] = None
-        self._loaded_path: Optional[Path] = None
+        self._model: Model | None = None
+        self._recognizer: KaldiRecognizer | None = None
+        self._loaded_path: Path | None = None
 
-    def load(self, model_path: Optional[Path | str] = None) -> None:
+    def load(self, model_path: Path | str | None = None) -> None:
         """Charge le modèle Vosk (peut prendre 1-2 sec). Idempotent."""
         path = Path(model_path) if model_path else self._config.vosk_model_path
         if self._loaded_path == path:
@@ -50,7 +49,7 @@ class STT:
         self._recognizer.SetWords(True)
         self._loaded_path = path
 
-    def transcribe_array(self, audio: np.ndarray, sample_rate: Optional[int] = None) -> str:
+    def transcribe_array(self, audio: np.ndarray, sample_rate: int | None = None) -> str:
         """Transcrit un buffer PCM complet (mono, int16 ou float)."""
         if self._recognizer is None:
             self.load()
@@ -85,8 +84,8 @@ class STT:
         return self.transcribe_array(data, sample_rate=sr)
 
     @property
-    def model_path(self) -> Optional[Path]:
+    def model_path(self) -> Path | None:
         return self._loaded_path
 
 
-__all__ = ["STT", "DEFAULT_SAMPLE_RATE"]
+__all__ = ["DEFAULT_SAMPLE_RATE", "STT"]

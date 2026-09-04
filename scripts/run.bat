@@ -1,20 +1,19 @@
 @echo off
+setlocal
+
 REM hal-voice launcher — Windows
-setlocal enabledelayedexpansion
+cd /d "%~dp0\.."
 
-echo [Hal] Initialisation des systemes...
+REM Active le venv s'il existe
+if exist ".venv\Scripts\activate.bat" (
+    call .venv\Scripts\activate.bat
+)
 
-REM On se place dans le dossier src pour que le module hal_voice soit importable
-cd /d "%~dp0\..\src"
-
-REM Lancement via le module Python
+cd src
 python -m hal_voice
 
 if %errorlevel% neq 0 (
     echo.
-    echo [Erreur] Hal a rencontre un probleme lors du demarrage.
+    echo [Erreur] Hal a rencontre un probleme.
     pause
 )
-
-echo [Hal] Systemes eteints.
-pause

@@ -6,7 +6,9 @@ import logging
 import sys
 from pathlib import Path
 
-from .audio_io import AudioIO
+import numpy as np
+
+from .audio_io import AudioIO, pulse_diagnostics
 from .commands import CommandParser
 from .config import Config
 from .stt_vosk import STT
@@ -18,8 +20,13 @@ log = logging.getLogger(__name__)
 
 
 def main() -> int:
+    # Mode diagnostic
+    if "--diagnose" in sys.argv:
+        pulse_diagnostics()
+        return 0
+
     cfg = Config.from_env()
-    
+
     # Initialisation des composants
     io = AudioIO(sample_rate=cfg.sample_rate)
     stt = STT(config=cfg)
@@ -34,7 +41,9 @@ def main() -> int:
             print("\n--- En attente d'une commande (3s) ---")
             # Capture un segment court
             audio = io.record(duration_seconds=3.0)
-            
+            max_amp = int(np.abs(audio).max())
+            log.info("Audio capturé : shape=%s max_amplitude=%d", audio.shape, max_amp)
+
             # Transcription
             text = stt.transcribe_array(audio)
             if not text:
@@ -45,7 +54,6 @@ def main() -> int:
             # Analyse de l'intention
             intent = parser.parse(text)
             if not intent:
-                # On peut ignorer ou répondre qu'on n'a pas compris
                 continue
 
             print(f"Hal [Intent] : {intent.name} {intent.params}")
@@ -60,7 +68,6 @@ def main() -> int:
 
             elif intent.name == "READ_FILE":
                 filename = intent.params.get("filename")
-                # On cherche le fichier dans le dossier courant ou un chemin spécifié
                 path = Path(filename)
                 if path.exists() and path.is_file():
                     content = path.read_text(encoding="utf-8")

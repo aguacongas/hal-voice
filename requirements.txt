@@ -9,6 +9,12 @@ vosk>=0.3.45
 pywin32>=306; sys_platform == "win32"
 keyboard>=0.13.5; sys_platform == "win32"
 
+# Linux/WSL-specific (TTS pyttsx3 + eSpeak)
+pyttsx3>=2.90; sys_platform != "win32"
+
+# Hotkey cross-platform
+pynput>=1.7.6
+
 # Config
 pyyaml>=6.0
 

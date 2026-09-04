@@ -15,7 +15,6 @@ def test_instantiation_unloaded() -> None:
 
 
 def test_load_missing_model_raises(tmp_path: pytest.TempPathFactory) -> None:
-    from pathlib import Path
 
     cfg = Config(
         vosk_model_path=tmp_path / "does_not_exist",  # type: ignore[arg-type]

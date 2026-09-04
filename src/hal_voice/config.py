@@ -23,8 +23,10 @@ DEFAULT_SAMPLE_RATE = 16_000
 DEFAULT_CHANNELS = 1
 DEFAULT_DTYPE = "int16"
 
-# Voix TTS (Windows SAPI 5)
-DEFAULT_TTS_VOICE_NAME_HINT = "fr"  # choisi la 1ère voix FR trouvée
+# Voix TTS
+#   Windows SAPI 5 : hint "fr" → 1ère voix FR trouvée
+#   Linux pyttsx3   : id eSpeak FR → voix française eSpeak
+DEFAULT_TTS_VOICE_NAME_HINT = "fr"
 
 # Wake word (placeholder v0.3)
 DEFAULT_WAKE_WORD = "hal"
@@ -41,7 +43,7 @@ class Config:
     wake_word: str
 
     @classmethod
-    def from_env(cls) -> "Config":
+    def from_env(cls) -> Config:
         return cls(
             vosk_model_path=Path(
                 os.environ.get("HAL_VOICE_MODEL_PATH", str(DEFAULT_VOSK_MODEL_PATH))
