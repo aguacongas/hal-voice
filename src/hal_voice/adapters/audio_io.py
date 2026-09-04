@@ -111,16 +111,15 @@ _MIC_PATTERNS = ["alsa_input", "usb", "mic", "microphone", "webcam", "capture"]
 _RDP_PATTERNS = ["rdpsource", "rdp"]
 
 
-def _test_source_amplitude(
-    source: str, server: str | None = None, duration: float = 1.0
-) -> int:
+def _test_source_amplitude(source: str, server: str | None = None, duration: float = 1.0) -> int:
     """Teste un device PulseAudio en capturant ``duration`` secondes.
 
     Renvoie l'amplitude maximale (int). 0 = silence complet.
     """
     n_samples = int(duration * 16_000)
     expected_bytes = n_samples * 2
-    tmp_path = tempfile.mktemp(suffix=".raw")
+    fd, tmp_path = tempfile.mkstemp(suffix=".raw")
+    os.close(fd)
     env = {**os.environ}
     if server:
         env["PULSE_SERVER"] = server
@@ -296,7 +295,8 @@ class AudioIO:
             log.warning("Aucun device PulseAudio trouvé — retour au silence")
             return np.zeros((n_samples, 1), dtype=np.int16)
 
-        tmp_path = tempfile.mktemp(suffix=".raw")
+        fd, tmp_path = tempfile.mkstemp(suffix=".raw")
+        os.close(fd)
         cmd = [
             "parecord",
             f"--device={self._pulse_input}",
@@ -386,8 +386,8 @@ class AudioIO:
             env["PULSE_SERVER"] = self._pulse_server
         try:
             subprocess.run(cmd, capture_output=True, check=True, env=env)
-        except (subprocess.CalledProcessError, FileNotFoundError) as e:
-            log.error("Erreur lecture paplay : %s", e)
+        except (subprocess.CalledProcessError, FileNotFoundError):
+            log.exception("Erreur lecture paplay")
         finally:
             Path(tmp_path).unlink(missing_ok=True)
 
@@ -413,6 +413,20 @@ class AudioIO:
 # ══════════════════════════════════════════════════════════════════════
 # Diagnostics et tests
 # ══════════════════════════════════════════════════════════════════════
+
+
+def _source_marker(name: str) -> str:
+    """Renvoie un marqueur descriptif pour une source PulseAudio."""
+    lower = name.lower()
+    if "monitor" in lower:
+        return " [MONITOR - ignore]"
+    if any(p in lower for p in _MIC_PATTERNS):
+        return " [*** MICRO ***]"
+    if "wavein" in lower:
+        return " [*** MICRO - Windows ***]"
+    if any(p in lower for p in _RDP_PATTERNS):
+        return " [RDP fallback - silence]"
+    return ""
 
 
 def pulse_diagnostics() -> None:
@@ -453,17 +467,8 @@ def pulse_diagnostics() -> None:
     sources = _pulse_list_sources(server)
     print(f"Sources PulseAudio ({len(sources)}) :")
     for src in sources:
-        name = str(src["name"])
-        marker = ""
-        if "monitor" in name.lower():
-            marker = " [MONITOR - ignore]"
-        elif any(p in name.lower() for p in _MIC_PATTERNS):
-            marker = " [*** MICRO ***]"
-        elif "wavein" in name.lower():
-            marker = " [*** MICRO - Windows ***]"
-        elif any(p in name.lower() for p in _RDP_PATTERNS):
-            marker = " [RDP fallback - silence]"
-        print(f"  index={src['index']} name={name}{marker}")
+        marker = _source_marker(str(src["name"]))
+        print(f"  index={src['index']} name={src['name']}{marker}")
 
     print()
 

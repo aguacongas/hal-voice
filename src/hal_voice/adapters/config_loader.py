@@ -45,9 +45,7 @@ def load_config_from_env() -> Config:
     d'environnement n'est pas définie.
     """
     return Config(
-        vosk_model_path=Path(
-            os.environ.get("HAL_VOICE_MODEL_PATH", str(DEFAULT_VOSK_MODEL_PATH))
-        ),
+        vosk_model_path=Path(os.environ.get("HAL_VOICE_MODEL_PATH", str(DEFAULT_VOSK_MODEL_PATH))),
         sample_rate=int(os.environ.get("HAL_VOICE_SAMPLE_RATE", DEFAULT_SAMPLE_RATE)),
         channels=int(os.environ.get("HAL_VOICE_CHANNELS", DEFAULT_CHANNELS)),
         dtype=os.environ.get("HAL_VOICE_DTYPE", DEFAULT_DTYPE),

@@ -29,13 +29,18 @@ sudo apt install espeak-ng pulseaudio-utils
 
 (`libportaudio2` n'est plus nécessaire — le backend sounddevice a été retiré.)
 
-### 2. Virtual Python + dépendances
+### 2. Virtual Python + dépendances (uv)
+
+Le projet utilise [uv](https://astral.sh/uv) (gestionnaire de dépendances moderne).
+`uv sync` crée `.venv`, installe le paquet en mode editable et résout toutes
+les versions depuis `uv.lock` (reproductible).
 
 ```bash
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-pip install -e .
+# Installe uv (si absent)
+curl -LsSf https://astral.sh/uv/install.sh | sh && export PATH="$HOME/.local/bin:$PATH"
+
+# Crée/synchronise .venv + installe les deps (runtime + dev)
+uv sync --extra dev
 ```
 
 ### 3. Modèle Vosk FR (~40 Mo)

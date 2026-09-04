@@ -7,9 +7,9 @@
 #
 # Ce script :
 #   1. Installe Python 3.10+ si absent
-#   2. Installe les dépendances système (libportaudio2, espeak-ng, etc.)
-#   3. Crée le virtual Python (.venv)
-#   4. Installe les dépendances Python
+#   2. Installe les dépendances système (espeak-ng, curl, unzip, etc.)
+#   3. Installe uv (gestionnaire de dép) et synchronise .venv (uv sync)
+#   4. Vérifie les imports
 #   5. Télécharge le modèle Vosk FR (~40 Mo)
 #
 # Options :
@@ -33,15 +33,18 @@ for arg in "$@"; do
             echo "  --skip-apt Saute les installations système"
             exit 0
             ;;
+        *)
+            echo "Option inconnue : $arg (ignorée)" >&2
+            ;;
     esac
 done
 
 # ── Couleurs ─────────────────────────────────────────────────────────
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[0;33m'; NC='\033[0m'
-ok()   { echo -e "  ${GREEN}✓${NC} $1"; }
-warn() { echo -e "  ${YELLOW}!${NC} $1"; }
-fail() { echo -e "  ${RED}✗${NC} $1"; }
-step() { echo -e "\n${GREEN}── $1 ──${NC}"; }
+ok()   { local msg="$1"; echo -e "  ${GREEN}✓${NC} $msg"; }
+warn() { local msg="$1"; echo -e "  ${YELLOW}!${NC} $msg"; }
+fail() { local msg="$1"; echo -e "  ${RED}✗${NC} $msg"; }
+step() { local msg="$1"; echo -e "\n${GREEN}── $msg ──${NC}"; }
 
 echo "══════════════════════════════════════"
 echo "  hal-voice — Installation auto"
@@ -53,12 +56,13 @@ echo "════════════════════════�
 step "1/6 — Python"
 
 find_python() {
+    local cmd ver major minor
     for cmd in python3 python; do
         if command -v "$cmd" &>/dev/null; then
             ver=$("$cmd" --version 2>&1 | grep -oP '\d+\.\d+')
             major=$(echo "$ver" | cut -d. -f1)
             minor=$(echo "$ver" | cut -d. -f2)
-            if [ "$major" -ge 3 ] && [ "$minor" -ge 10 ]; then
+            if [[ "$major" -ge 3 ]] && [[ "$minor" -ge 10 ]]; then
                 echo "$cmd"
                 return 0
             fi
@@ -69,7 +73,7 @@ find_python() {
 
 PYTHON_CMD=$(find_python || true)
 
-if [ -z "$PYTHON_CMD" ]; then
+if [[ -z "$PYTHON_CMD" ]]; then
     fail "Python 3.10+ introuvable"
     if $CHECK_ONLY || $SKIP_APT; then
         echo "  Installe-le manuellement : sudo apt install python3 python3-venv python3-pip"
@@ -79,7 +83,7 @@ if [ -z "$PYTHON_CMD" ]; then
     sudo apt update -qq
     sudo apt install -y python3 python3-venv python3-pip
     PYTHON_CMD=$(find_python || true)
-    if [ -z "$PYTHON_CMD" ]; then
+    if [[ -z "$PYTHON_CMD" ]]; then
         fail "Échec installation Python"
         exit 1
     fi
@@ -105,7 +109,7 @@ grep -qi microsoft /proc/version 2>/dev/null && IS_WSL=true
 
 install_pkg() {
     local pkg="$1"
-    local check_cmd="${2:-$1}"
+    local check_cmd="${2:-$pkg}"
 
     if command -v "$check_cmd" &>/dev/null; then
         ok "$pkg"
@@ -122,7 +126,6 @@ install_pkg() {
 }
 
 # Toujours installés
-install_pkg libportaudio2
 install_pkg espeak-ng espeak-ng
 install_pkg curl curl
 install_pkg unzip unzip
@@ -134,7 +137,7 @@ if $IS_WSL; then
     # PulseAudio Windows
     PA_EXE="${LOCALAPPDATA:-/mnt/c/Users/*/AppData/Local}/pulseaudio/pulseaudio/bin/pulseaudio.exe"
     PA_EXPANDED=$(eval echo "$PA_EXE" 2>/dev/null | head -1)
-    if [ -f "$PA_EXPANDED" ]; then
+    if [[ -f "$PA_EXPANDED" ]]; then
         ok "PulseAudio Windows"
     else
         warn "PulseAudio Windows non trouvé — micro WSL2 indisponible"
@@ -143,18 +146,34 @@ if $IS_WSL; then
 fi
 
 # ══════════════════════════════════════════════════════════════════════
-# 3. Virtual environment
+# 3. Virtual environment (uv)
 # ══════════════════════════════════════════════════════════════════════
-step "3/6 — Virtual environment"
+# Le projet utilise https://astral.sh/uv (gestionnaire moderne) : `uv sync`
+# crée/synchronise .venv depuis pyproject.toml + uv.lock (déclaratif), puis
+# installe le paquet en mode editable + les extras dev.
+step "3/6 — Virtual environment (uv)"
 
 VENV_DIR="$PROJECT_DIR/.venv"
-if [ -f "$VENV_DIR/bin/activate" ]; then
-    ok "venv existant"
-elif $CHECK_ONLY; then
-    fail "venv absent"
+
+if ! command -v uv &>/dev/null; then
+    if $CHECK_ONLY || $SKIP_APT; then
+        fail "uv manquant — installe-le : curl -LsSf https://astral.sh/uv/install.sh | sh"
+        exit 1
+    fi
+    warn "uv manquant — installation..."
+    curl -LsSf https://astral.sh/uv/install.sh | sh
+    export PATH="$HOME/.local/bin:$PATH"
+fi
+
+if $CHECK_ONLY; then
+    if [[ -f "$VENV_DIR/bin/activate" ]]; then
+        ok "venv existant"
+    else
+        fail "venv absent"
+    fi
 else
-    "$PYTHON_CMD" -m venv "$VENV_DIR"
-    ok "venv créé"
+    uv sync --extra dev
+    ok "venv synchronisé (uv sync)"
 fi
 
 # shellcheck disable=SC1091
@@ -166,14 +185,11 @@ source "$VENV_DIR/bin/activate"
 step "4/6 — Packages Python"
 
 if $CHECK_ONLY; then
-    for mod in sounddevice soundfile vosk pynput pyttsx3; do
+    for mod in soundfile vosk pynput pyttsx3; do
         python -c "import $mod" 2>/dev/null && ok "$mod" || fail "$mod manquant"
     done
 else
-    pip install --upgrade pip -q 2>/dev/null
-    pip install -r "$PROJECT_DIR/requirements.txt" -q 2>/dev/null
-    pip install -e "$PROJECT_DIR" -q 2>/dev/null
-    ok "packages installés"
+    ok "packages installés (uv sync)"
 fi
 
 # ══════════════════════════════════════════════════════════════════════
@@ -181,8 +197,7 @@ fi
 # ══════════════════════════════════════════════════════════════════════
 step "5/6 — Vérification"
 
-MODULES="sounddevice:PortAudio
-soundfile:soundfile
+MODULES="soundfile:soundfile
 vosk:Vosk STT
 pynput:hotkeys
 pyttsx3:TTS"
@@ -200,7 +215,7 @@ done <<< "$MODULES"
 step "6/6 — Modèle Vosk FR"
 
 MODEL_DIR="$PROJECT_DIR/models/vosk-model-small-fr-0.22"
-if [ -d "$MODEL_DIR" ]; then
+if [[ -d "$MODEL_DIR" ]]; then
     ok "modèle présent"
 elif $CHECK_ONLY; then
     fail "modèle absent"
@@ -209,7 +224,8 @@ else
     mkdir -p "$PROJECT_DIR/models"
     (
         cd "$PROJECT_DIR/models"
-        curl -sL --fail https://alphacephei.com/vosk/models/vosk-model-small-fr-0.22.zip \
+        curl -sL --fail --proto '=https' --tlsv1.2 \
+            https://alphacephei.com/vosk/models/vosk-model-small-fr-0.22.zip \
             -o vosk-model.zip \
             && unzip -qo vosk-model.zip \
             && rm vosk-model.zip \

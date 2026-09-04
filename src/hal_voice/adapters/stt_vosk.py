@@ -38,7 +38,11 @@ class STT:
     ``transcribe_array`` si ``load()`` n'a pas été appelé).
     """
 
-    def __init__(self, model_path: Path | str | None = None, sample_rate: int = DEFAULT_SAMPLE_RATE) -> None:
+    def __init__(
+        self,
+        model_path: Path | str | None = None,
+        sample_rate: int = DEFAULT_SAMPLE_RATE,
+    ) -> None:
         self._model_path = Path(model_path) if model_path else None
         self._sample_rate = sample_rate
         self._model: Model | None = None

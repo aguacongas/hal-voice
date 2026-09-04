@@ -27,7 +27,7 @@ def test_parse_greeting() -> None:
     """Le mot 'bonjour' déclenche l'intention GREETING."""
     intent = CommandParser().parse("bonjour")
     assert intent == Intent(name="GREETING")
-    assert intent is not None and intent.params == {}
+    assert intent.params == {}
 
 
 def test_parse_greeting_ignores_case_and_whitespace() -> None:
@@ -64,9 +64,7 @@ def test_parse_read_file_with_filename() -> None:
 def test_parse_read_file_multiple_words() -> None:
     """Le nom de fichier peut contenir plusieurs mots."""
     intent = CommandParser().parse("lecture mon rapport final.txt")
-    assert intent == Intent(
-        name="READ_FILE", params={"filename": "mon rapport final.txt"}
-    )
+    assert intent == Intent(name="READ_FILE", params={"filename": "mon rapport final.txt"})
 
 
 def test_parse_read_file_without_filename_returns_error() -> None:

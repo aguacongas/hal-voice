@@ -64,9 +64,11 @@
 - [x] **Retrait du support natif Windows** (WSL2/Linux only) : TTS SAPI5/`win32com` et audio `sounddevice` supprimés, deps `pywin32`/`sounddevice` retirées, scripts `install.bat`/`run.bat`/`detect-mic.ps1`/`test-mic-device.sh` supprimés. `setup.bat`/`teardown.bat` (WSL2 + PulseAudio) conservés.
 
 ## v0.8.0 — Wake word
-- [ ] `wakeword.py` : détection du mot-clé "hal"
-- [ ] Seuillage adaptatif
-- [ ] Mode veille (écoute basse consommation)
+- [x] `wakeword.py` : `WakeWordDetector` (détection du mot-clé "hal" dans le texte transcrit)
+- [x] Seuillage adaptatif : `AdaptiveVoiceActivity` (VAD à plancher de bruit adaptatif)
+- [x] Mode veille (écoute basse consommation) : `Orchestrator._run_standby()`, ne transcrit que si parole + ne s'engage qu'après le wake word
+- [ ] Intégration STT streaming vers le wake word (tranche partielle)
+- [ ] Tests CI automatisés de la boucle veille réelle (matériel)
 
 ## v0.9.0 — Enrichissements
 - [ ] Commandes supplémentaires (météo, calcul, etc.)

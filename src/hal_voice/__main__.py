@@ -22,6 +22,7 @@ from hal_voice.adapters.stt_vosk import STT
 from hal_voice.adapters.tts import TTS
 from hal_voice.use_cases.command_parser import CommandParser
 from hal_voice.use_cases.orchestrator import Orchestrator
+from hal_voice.use_cases.wakeword import WakeWordDetector
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 log = logging.getLogger(__name__)
@@ -45,7 +46,12 @@ def main() -> int:
     log.info("Hal s'éveille... (v0.5.0)")
 
     orchestrator = Orchestrator(
-        capture=io, stt=stt, tts=tts, parser=parser, silent=cfg.silent
+        capture=io,
+        stt=stt,
+        tts=tts,
+        parser=parser,
+        silent=cfg.silent,
+        wake_detector=WakeWordDetector(cfg.wake_word),
     )
     return orchestrator.run()
 
