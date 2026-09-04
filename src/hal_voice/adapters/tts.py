@@ -32,6 +32,7 @@ from __future__ import annotations
 import logging
 import os
 import sys
+from pathlib import Path
 
 log = logging.getLogger(__name__)
 
@@ -193,7 +194,44 @@ def _configure_pulse_for_espeak() -> None:
 
     # Force eSpeak-ng à utiliser PulseAudio Windows
     os.environ["PULSE_SERVER"] = tcp_server
+
+    # Redirige le device ALSA par défaut vers PulseAudio.
+    # pyttsx3/eSpeak joue l'audio via `aplay <wav>` (ALSA sans -D).
+    # Sans carte son, ALSA échoue ("cannot find card 0"). Un ~/.asoundrc
+    # qui pointe `pcm.!default` vers le plugin `pulse` (libasound2-plugins)
+    # fait passer aplay par PulseAudio + PULSE_SERVER Windows → audible.
+    _write_asoundrc()
     log.info("eSpeak configuré pour PulseAudio Windows : %s", tcp_server)
+
+
+_ASOUNDRC = """\
+pcm.!default {
+    type pulse
+    hint {
+        show on
+        description "Default ALSA Output (PulseAudio)"
+    }
+}
+ctl.!default {
+    type pulse
+}
+"""
+
+
+def _write_asoundrc() -> None:
+    """Écrit ~/.asoundrc pour rediriger ALSA → PulseAudio (résout les erreurs aplay).
+
+    Idempotent : n'écrit que si le fichier n'existe pas déjà.
+    """
+    asoundrc = Path.home() / ".asoundrc"
+    try:
+        if asoundrc.exists():
+            log.debug("~/.asoundrc déjà présent, skip")
+            return
+        asoundrc.write_text(_ASOUNDRC)
+        log.info("~/.asoundrc créé — ALSA redirigé vers PulseAudio")
+    except OSError:
+        log.warning("Impossible d'écrire ~/.asoundrc (%s)", asoundrc)
 
 
 class TTS:

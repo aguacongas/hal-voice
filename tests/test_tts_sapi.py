@@ -18,7 +18,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 import hal_voice.adapters.tts as tts_mod
-from hal_voice.adapters.tts import FRENCH_LANG_ID, TTS, _lang_id_to_int
+from hal_voice.adapters.tts import FRENCH_LANG_ID, TTS, _is_france, _is_french, _lang_id_to_int
 
 
 def _make_fake_speaker():
@@ -70,6 +70,45 @@ def test_lang_id_to_int_int_passthrough() -> None:
 def test_french_lang_id_value() -> None:
     """FRENCH_LANG_ID correspond bien au français (fr-FR)."""
     assert FRENCH_LANG_ID == 1036
+
+
+def test_is_french_sapi_hex() -> None:
+    """_is_french reconnaît les IDs SAPI hex (fr-FR = 40C)."""
+    assert _is_french("40C")
+    assert not _is_french("409")  # en-US
+
+
+def test_is_french_bcp47() -> None:
+    """_is_french reconnaît les tags BCP 47 / eSpeak."""
+    assert _is_french("roa/fr")
+    assert _is_french("roa/fr-be")
+    assert _is_french("fr")
+    assert _is_french("fra")
+    assert not _is_french("roa/en")
+    assert not _is_french("gmw/en")
+
+
+def test_is_france_prefers_metropole() -> None:
+    """_is_france cible uniquement le français de France (pas BE/CH)."""
+    # SAPI : fr-FR = 0x040C
+    assert _is_france("40C")
+    # eSpeak : roa/fr = France ; fr-be/fr-ch = Belgique/Suisse
+    assert _is_france("roa/fr")
+    assert not _is_france("roa/fr-be")
+    assert not _is_france("roa/fr-ch")
+    assert not _is_france("roa/en")
+
+
+def test_write_asoundrc(tmp_path, monkeypatch) -> None:
+    """_write_asoundrc crée ~/.asoundrc pointant vers PulseAudio."""
+    monkeypatch.setattr(tts_mod.Path, "home", lambda: tmp_path)
+    asoundrc = tmp_path / ".asoundrc"
+    assert not asoundrc.exists()
+
+    tts_mod._write_asoundrc()
+    assert asoundrc.exists()
+    assert "type pulse" in asoundrc.read_text()
+    tts_mod._write_asoundrc()  # idempotent, ne doit pas lever
 
 
 # ── Tests Windows (SAPI 5) ────────────────────────────────────────────
