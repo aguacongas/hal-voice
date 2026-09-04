@@ -7,6 +7,7 @@ Cross-platform : sounddevice (PortAudio) par défaut, fallback PulseAudio (parec
 from __future__ import annotations
 
 import logging
+import os
 import shutil
 import subprocess
 import sys
@@ -35,13 +36,55 @@ def _is_wsl() -> bool:
         return False
 
 
-def _pulse_list_sources() -> list[dict[str, str | int]]:
+def _get_windows_host_ip() -> str | None:
+    """Récupère l'IP de la machine Windows hôte depuis WSL."""
+    try:
+        out = subprocess.check_output(
+            ["ip", "route", "show", "default"],
+            text=True,
+            stderr=subprocess.DEVNULL,
+        )
+        return out.split()[2]
+    except (subprocess.CalledProcessError, IndexError, FileNotFoundError):
+        return None
+
+
+def _pulse_find_server() -> str | None:
+    """Trouve le meilleur serveur PulseAudio disponible.
+
+    Priorité : PulseAudio Windows (TCP 4713) > WSLg (unix socket).
+    PulseAudio Windows expose le vrai micro via module-waveout.
+    """
+    host_ip = _get_windows_host_ip()
+    if host_ip:
+        tcp_server = f"tcp:{host_ip}"
+        # Teste si PulseAudio Windows est accessible
+        try:
+            subprocess.run(
+                ["pactl", "info"],
+                env={**os.environ, "PULSE_SERVER": tcp_server},
+                capture_output=True,
+                timeout=3,
+                check=True,
+            )
+            log.info("PulseAudio Windows détecté sur %s", tcp_server)
+            return tcp_server
+        except (subprocess.CalledProcessError, FileNotFoundError, subprocess.TimeoutExpired):
+            pass
+    return None
+
+
+def _pulse_list_sources(server: str | None = None) -> list[dict[str, str | int]]:
     """Parse `pactl list sources short` → liste de dicts."""
+    env = {**os.environ}
+    if server:
+        env["PULSE_SERVER"] = server
     try:
         out = subprocess.check_output(
             ["pactl", "list", "sources", "short"],
             text=True,
             stderr=subprocess.DEVNULL,
+            env=env,
         )
     except (subprocess.CalledProcessError, FileNotFoundError):
         return []
@@ -58,15 +101,72 @@ _MIC_PATTERNS = ["alsa_input", "usb", "mic", "microphone", "webcam", "capture"]
 _RDP_PATTERNS = ["rdpsource", "rdp"]
 
 
-def _pulse_find_input_device() -> str | None:
+def _test_source_amplitude(
+    source: str, server: str | None = None, duration: float = 1.0
+) -> int:
+    """Teste un device PulseAudio en capturant ``duration`` secondes.
+
+    Renvoie l'amplitude maximale (int). 0 = silence.
+    """
+    n_samples = int(duration * 16_000)
+    expected_bytes = n_samples * 2
+    tmp_path = tempfile.mktemp(suffix=".raw")
+    env = {**os.environ}
+    if server:
+        env["PULSE_SERVER"] = server
+    try:
+        proc = subprocess.Popen(
+            [
+                "parecord",
+                f"--device={source}",
+                "--format=s16le",
+                "--rate=16000",
+                "--channels=1",
+                tmp_path,
+            ],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.PIPE,
+            env=env,
+        )
+    except FileNotFoundError:
+        return 0
+    start = time.monotonic()
+    try:
+        while True:
+            if time.monotonic() - start > duration + 3:
+                break
+            time.sleep(0.05)
+            try:
+                if Path(tmp_path).stat().st_size >= expected_bytes:
+                    break
+            except OSError:
+                pass
+    except KeyboardInterrupt:
+        pass
+    proc.terminate()
+    try:
+        proc.communicate(timeout=3)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        proc.wait()
+    try:
+        data = np.fromfile(tmp_path, dtype=np.int16, count=n_samples)
+    except OSError:
+        return 0
+    finally:
+        Path(tmp_path).unlink(missing_ok=True)
+    return int(data.max()) if len(data) > 0 else 0
+
+
+def _pulse_find_input_device(server: str | None = None) -> str | None:
     """Trouve le meilleur device d'entrée PulseAudio (pas un monitor).
 
-    Priorité : vrais micros (alsa_input, usb, mic...) > tout device non-monitor.
+    Teste l'amplitude de chaque source pour choisir celle qui capte vraiment.
     RDPSource est en dernier recours seulement.
     """
     candidates: list[str] = []
     rdp_fallback: str | None = None
-    for src in _pulse_list_sources():
+    for src in _pulse_list_sources(server):
         name = str(src["name"]).lower()
         if "monitor" in name:
             continue
@@ -75,26 +175,43 @@ def _pulse_find_input_device() -> str | None:
             continue
         candidates.append(str(src["name"]))
 
-    # Prioriser les vrais micros
-    for candidate in candidates:
-        if any(p in candidate.lower() for p in _MIC_PATTERNS):
-            return candidate
+    if not candidates:
+        return rdp_fallback
 
-    # Sinon prendre le premier non-monitor non-RDP
-    if candidates:
+    if len(candidates) == 1:
         return candidates[0]
 
-    # Dernier recours : RDP
-    return rdp_fallback
+    # Teste l'amplitude de chaque candidate (~1s chacune)
+    log.info("Test de %d devices PulseAudio...", len(candidates))
+    best_source = candidates[0]
+    best_amp = 0
+    for src_name in candidates:
+        amp = _test_source_amplitude(src_name, server, duration=1.0)
+        log.info("  %s -> amplitude %d", src_name, amp)
+        if amp > best_amp:
+            best_amp = amp
+            best_source = src_name
+
+    if best_amp > 100:
+        log.info("Device choisi : %s (amplitude %d)", best_source, best_amp)
+        return best_source
+
+    # Aucun device ne capte — retourne le premier
+    log.warning("Aucun device ne capte (>100), utilisation de %s", candidates[0])
+    return candidates[0]
 
 
-def _pulse_find_output_device() -> str | None:
+def _pulse_find_output_device(server: str | None = None) -> str | None:
     """Trouve le meilleur device de sortie PulseAudio."""
+    env = {**os.environ}
+    if server:
+        env["PULSE_SERVER"] = server
     try:
         out = subprocess.check_output(
             ["pactl", "list", "sinks", "short"],
             text=True,
             stderr=subprocess.DEVNULL,
+            env=env,
         )
     except (subprocess.CalledProcessError, FileNotFoundError):
         return None
@@ -122,13 +239,16 @@ class AudioIO:
         self.input_device = input_device
         self.output_device = output_device
         self._use_pulse = _is_wsl() and shutil.which("parecord") is not None
+        self._pulse_server: str | None = None
         self._pulse_input: str | None = None
         self._pulse_output: str | None = None
         if self._use_pulse:
-            self._pulse_input = _pulse_find_input_device()
-            self._pulse_output = _pulse_find_output_device()
+            self._pulse_server = _pulse_find_server()
+            self._pulse_input = _pulse_find_input_device(self._pulse_server)
+            self._pulse_output = _pulse_find_output_device(self._pulse_server)
             log.info(
-                "WSL2 détecté — PulseAudio input=%s output=%s",
+                "WSL2 — server=%s input=%s output=%s",
+                self._pulse_server or "WSLg (défaut)",
                 self._pulse_input,
                 self._pulse_output,
             )
@@ -173,11 +293,9 @@ class AudioIO:
         n_samples = int(duration_seconds * self.sample_rate * self.channels)
         if not self._pulse_input:
             log.warning("Aucun device PulseAudio trouvé — retour au silence")
-            return np.zeros(n_samples, dtype=np.int16)
+            return np.zeros((n_samples, 1), dtype=np.int16)
 
-        tmp = tempfile.NamedTemporaryFile(suffix=".raw", delete=False)
-        tmp_path = tmp.name
-        tmp.close()
+        tmp_path = tempfile.mktemp(suffix=".raw")
 
         cmd = [
             "parecord",
@@ -188,16 +306,20 @@ class AudioIO:
             tmp_path,
         ]
         log.debug("parecord cmd: %s", " ".join(cmd))
+        env = {**os.environ}
+        if self._pulse_server:
+            env["PULSE_SERVER"] = self._pulse_server
         try:
             proc = subprocess.Popen(
                 cmd,
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.PIPE,
+                env=env,
             )
         except FileNotFoundError:
             log.error("parecord introuvable — installe pulseaudio-utils")
             Path(tmp_path).unlink(missing_ok=True)
-            return np.zeros(n_samples, dtype=np.int16)
+            return np.zeros((n_samples, 1), dtype=np.int16)
 
         expected_bytes = n_samples * 2
         timeout = duration_seconds + 5  # marge pour démarrage
@@ -232,7 +354,7 @@ class AudioIO:
         if got_size < 2:
             log.warning("parecord: aucune donnée capturée (%d bytes)", got_size)
             Path(tmp_path).unlink(missing_ok=True)
-            return np.zeros(n_samples, dtype=np.int16)
+            return np.zeros((n_samples, 1), dtype=np.int16)
 
         try:
             data = np.fromfile(tmp_path, dtype=np.int16, count=n_samples)
@@ -242,8 +364,8 @@ class AudioIO:
         if len(data) < n_samples:
             padded = np.zeros(n_samples, dtype=np.int16)
             padded[: len(data)] = data
-            return padded
-        return data
+            return padded.reshape(-1, 1)
+        return data.reshape(-1, 1)
 
     # ── Lecture ──────────────────────────────────────────────────────
 
@@ -273,8 +395,11 @@ class AudioIO:
         if self._pulse_output:
             cmd.extend([f"--device={self._pulse_output}"])
         cmd.append(tmp_path)
+        env = {**os.environ}
+        if self._pulse_server:
+            env["PULSE_SERVER"] = self._pulse_server
         try:
-            subprocess.run(cmd, capture_output=True, check=True)
+            subprocess.run(cmd, capture_output=True, check=True, env=env)
         finally:
             Path(tmp_path).unlink(missing_ok=True)
 
@@ -305,24 +430,37 @@ def pulse_diagnostics() -> None:
 
     print("=== Diagnostics PulseAudio (WSL2) ===\n")
 
-    # Test pulseaudio daemon
+    # Détection du serveur PulseAudio Windows
+    server = _pulse_find_server()
+    if server:
+        print(f"[OK] PulseAudio Windows détecté : {server}")
+    else:
+        print("[INFO] PulseAudio Windows non trouvé — utilisation WSLg (défaut)")
+        print("  → Le micro WSLg (RDPSource) ne capture que du silence")
+        print("  → Installe PulseAudio Windows + configure PULSE_SERVER")
+
+    print()
+
+    # Test pulseaudio daemon avec le serveur trouvé
+    env = {**os.environ}
+    if server:
+        env["PULSE_SERVER"] = server
     try:
         out = subprocess.check_output(
-            ["pactl", "info"], text=True, stderr=subprocess.STDOUT
+            ["pactl", "info"], text=True, stderr=subprocess.STDOUT, env=env
         )
         print("[OK] pactl info :")
         for line in out.strip().splitlines():
-            if any(k in line.lower() for k in ("server name", "server version", "pulse server")):
+            if any(k in line.lower() for k in ("server name", "server version", "server string")):
                 print(f"  {line.strip()}")
     except (subprocess.CalledProcessError, FileNotFoundError) as e:
         print(f"[ERREUR] pactl info impossible : {e}")
-        print("  → PulseAudio server ne tourne pas ?")
         return
 
     print()
 
     # Lister toutes les sources
-    sources = _pulse_list_sources()
+    sources = _pulse_list_sources(server)
     print(f"Sources PulseAudio ({len(sources)}) :")
     for src in sources:
         name = str(src["name"])
@@ -331,8 +469,10 @@ def pulse_diagnostics() -> None:
             marker = " [MONITOR - ignore]"
         elif any(p in name.lower() for p in _MIC_PATTERNS):
             marker = " [*** MICRO ***]"
+        elif "wavein" in name.lower():
+            marker = " [*** MICRO - Windows ***]"
         elif any(p in name.lower() for p in _RDP_PATTERNS):
-            marker = " [RDP fallback]"
+            marker = " [RDP fallback - silence]"
         print(f"  index={src['index']} name={name}{marker}")
 
     print()
@@ -343,13 +483,13 @@ def pulse_diagnostics() -> None:
     print(f"Device output      : {io._pulse_output}")
     print()
 
-    # Test capture 1s
-    print("Test capture 1s...")
-    audio = io.record(1.0)
+    # Test capture 3s
+    print("Test capture 3s...")
+    audio = io.record(3.0)
     max_amp = int(np.abs(audio).max())
     print(f"  shape={audio.shape}, max_amplitude={max_amp}")
     if max_amp < 100:
-        print("  → SILENCE capté — micro ne fonctionne pas")
+        print("  → Faible amplitude — vérifie PulseAudio Windows + PULSE_SERVER")
     else:
         print("  → Son capté OK")
 
@@ -360,6 +500,7 @@ def quick_test() -> None:
     backend = "PulseAudio (parecord)" if io._use_pulse else "sounddevice (PortAudio)"
     print(f"Backend : {backend}")
     if io._use_pulse:
+        print(f"PulseAudio server : {io._pulse_server or 'WSLg (défaut)'}")
         print(f"PulseAudio input  : {io._pulse_input}")
         print(f"PulseAudio output : {io._pulse_output}")
     else:
