@@ -2,7 +2,7 @@
 
 ## Contexte
 
-Projet en Clean Architecture (`domain/`, `use_cases/`, `adapters/`) sur branche `wsl2-support`. Depuis 2026-09-05, le **TTS est audible sous WSL2** (voix French (France) via PulseAudio Windows). Installation/uninstallation automatisées. **Pas de back-compat** avec les anciens modules. Depuis 2026-09-04/09-05, le **support natif Windows a été retiré** (app WSL2/Linux seulement).
+Projet en Clean Architecture (`domain/`, `use_cases/`, `adapters/`) **sur `main`** (PR #1 mergée le 2026-09-07). Depuis 2026-09-05, le **TTS est audible sous WSL2** (voix French (France) via PulseAudio Windows). Installation/uninstallation automatisées. **Pas de back-compat** avec les anciens modules. Depuis 2026-09-04/09-05, le **support natif Windows a été retiré** (app WSL2/Linux seulement). Depuis 2026-09-07, **CI GitHub Actions vert** (ruff + pytest 3.10→3.13 + SonarCloud) et **couverture 93%**.
 
 ## Conclusion du travail déjà fait (à ne pas refaire)
 
@@ -13,12 +13,15 @@ Projet en Clean Architecture (`domain/`, `use_cases/`, `adapters/`) sur branche 
 - **run.sh auto-start PulseAudio Windows** si pas accessible.
 - **TTS audible WSL2** : `~/.asoundrc` → PulseAudio + `PULSE_SERVER=tcp:<gateway>` + voix French (France).
 - **Support natif Windows retiré** : TTS SAPI5/win32com et audio sounddevice supprimés ; deps `pywin32`/`sounddevice` retirées ; scripts `install.bat`/`run.bat`/`detect-mic.ps1`/`test-mic-device.sh` supprimés. `setup.bat`/`teardown.bat` (installent WSL2 + PulseAudio) **conservés**.
+- **CI + SonarCloud verts** : workflow `ci.yml` (job SonarCloud gate par step, token via secret `SONAR_TOKEN`), 44 issues SonarCloud résolues (0 ouverte), couverture **93%**.
+- **`.gitattributes`** : `*.sh`/`*.yml` en LF — corrige le shebang CRLF de `run.sh` sous Windows.
+- **pynput headless** : `conftest.py` stub `pynput` dans `sys.modules` si l'import échoue (runner CI sans serveur X).
 
 ## TOUT RELIRE AVANT DE CODER
 
 1. `AGENTS.md`
 2. `docs/SESSION-NOTES-2026-09-04.md`
-3. `docs/SESSION-NOTES-2026-09-05.md`
+3. `docs/SESSION-NOTES-2026-09-07.md` (CI verts, couverture 93%, merge PR #1)
 4. `docs/ARCHITECTURE.md`
 
 ## État runtime (à vérifier/rétablir d'abord)
@@ -98,12 +101,19 @@ Doit afficher `Voix: French (France)`, aucun `ALSA lib ... cannot find card`, et
 
 ## Branches Git
 
-- `main` : code stable
-- `wsl2-support` : travail en cours (Clean Architecture + WSL2)
+- `main` : seul branche active — PR `wsl2-support` **mergée** et supprimée le 2026-09-07.
+- Toute nouvelle feature : créer une branche depuis `main`, puis PR avec checks CI (branch protection : review + strict sur `main`).
 
 ## Prochaines étapes
 
-- v0.7.0 : tests end-to-end, gestion des erreurs audio, mode silencieux (`--silent`)
-- v0.8.0 : wake word ("hal")
-- v0.9.0 : commandes supplémentaires, contexte conversationnel
-- v1.0.0 : CI/CD, couverture tests > 80%
+Objectif roadmap : **v0.9.0** — commandes supplémentaires, contexte conversationnel.
+
+Historique roadmap (fait) :
+- v0.7.0 : tests end-to-end, gestion des erreurs audio, mode silencieux (`--silent`) — complet.
+- v0.8.0 : wake word ("hal") + VAD adaptatif + mode veille — complet.
+- v1.0.0 killing : CI/CD + SonarCloud verts (couverture 93%) — les fondations CI sont posées, il reste à décider du seuil de couverture SonarCloud (gate quality).
+
+Idées pour la prochaine session :
+- Décider/configurer la **quality gate SonarCloud** (ex. seuil couverture sur Nouvelles Lignes).
+- Wake word : tests matériels réels sous WSL (VAD, sensibilité wakeword) via `./scripts/run.sh` et `--diagnose`.
+- Re-valider le **TTS audible** après réinstallation WSL (cf. Validation TTS ci-dessus).

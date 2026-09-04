@@ -61,6 +61,7 @@ Both fixes run BEFORE `pyttsx3.init()` in `TTS.__init__`. If TTS is silent under
 - `docs/SESSION-NOTES-2026-09-04.md` — auto-detection, duplicate module-waveout fix, comments, docs.
 - `docs/SESSION-NOTES-2026-09-05.md` — Clean Architecture refactor, install/setup scripts, TTS audible fix.
 - `docs/SESSION-NOTES-2026-09-06.md` — retrait du support natif Windows (TTS/audio/deps/scripts/docs).
+- `docs/SESSION-NOTES-2026-09-07.md` — CI/SonarCloud verts, couverture 93%, merge de la PR #1 (wsl2-support → main, branche supprimée).
 
 ## Conventions
 
