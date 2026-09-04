@@ -1,0 +1,13 @@
+# Normalisation générique des fins de ligne
+* text=auto
+
+# Scripts shell : toujours LF (le shebang se casse avec CRLF sous Linux/WSL)
+*.sh text eol=lf
+
+# Workflows / fichiers de config CI : LF
+*.yml text eol=lf
+*.yaml text eol=lf
+
+# Fichiers binaires : jamais réinterprétés comme texte
+*.raw binary
+*.wav binary
