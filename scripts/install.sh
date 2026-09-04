@@ -1,189 +1,155 @@
 #!/usr/bin/env bash
 # ══════════════════════════════════════════════════════════════════════
-# install.sh — Installeur hal-voice pour Linux / WSL2
+# install.sh — Installation automatique de hal-voice (Linux / WSL2)
+#
+# Une seule commande installe TOUT :
+#   ./scripts/install.sh
 #
 # Ce script :
-#   1. Vérifie Python 3.10+
-#   2. Détecte et installe les dépendances système (apt)
+#   1. Installe Python 3.10+ si absent
+#   2. Installe les dépendances système (libportaudio2, espeak-ng, etc.)
 #   3. Crée le virtual Python (.venv)
 #   4. Installe les dépendances Python
-#   5. Vérifie que tous les modules sont importables
-#   6. Télécharge le modèle Vosk FR si absent
+#   5. Télécharge le modèle Vosk FR (~40 Mo)
 #
-# Utilisation :
-#   ./scripts/install.sh           # installation complète
-#   ./scripts/install.sh --check   # vérification sans installer
-#
-# Prérequis :
-#   - Python 3.10+ et pip
-#   - Connexion internet (pour apt + modèle Vosk)
-#   - Droits sudo (pour apt install)
+# Options :
+#   --check    Vérifie sans rien installer (dry-run)
+#   --skip-apt Saute les installations apt (utile si pas sudo)
 # ══════════════════════════════════════════════════════════════════════
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 CHECK_ONLY=false
-ERRORS=0
+SKIP_APT=false
 
-[[ "${1:-}" == "--check" ]] && CHECK_ONLY=true
-
-# ── Couleurs ─────────────────────────────────────────────────────────
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[0;33m'
-CYAN='\033[0;36m'
-NC='\033[0m'
-
-ok()   { echo -e "  ${GREEN}✓${NC} $1"; }
-warn() { echo -e "  ${YELLOW}!${NC} $1"; }
-fail() { echo -e "  ${RED}✗${NC} $1"; ERRORS=$((ERRORS + 1)); }
-info() { echo -e "  ${CYAN}→${NC} $1"; }
-
-echo "=== hal-voice — Installation ==="
-echo ""
-
-# ══════════════════════════════════════════════════════════════════════
-# 1. Python
-# ══════════════════════════════════════════════════════════════════════
-echo "[1/6] Python..."
-
-PYTHON_CMD=""
-for cmd in python3 python; do
-    if command -v "$cmd" &>/dev/null; then
-        version=$("$cmd" --version 2>&1 | grep -oP '\d+\.\d+')
-        major=$(echo "$version" | cut -d. -f1)
-        minor=$(echo "$version" | cut -d. -f2)
-        if [ "$major" -ge 3 ] && [ "$minor" -ge 10 ]; then
-            PYTHON_CMD="$cmd"
-            break
-        fi
-    fi
+for arg in "$@"; do
+    case "$arg" in
+        --check)    CHECK_ONLY=true ;;
+        --skip-apt) SKIP_APT=true ;;
+        --help|-h)
+            echo "Utilisation : ./scripts/install.sh [--check] [--skip-apt]"
+            echo "  --check    Vérifie sans rien installer"
+            echo "  --skip-apt Saute les installations système"
+            exit 0
+            ;;
+    esac
 done
 
-if [ -z "$PYTHON_CMD" ]; then
-    fail "Python 3.10+ requis. Installe-le avec : sudo apt install python3 python3-venv"
-elif $CHECK_ONLY; then
-    ok "Python $($PYTHON_CMD --version 2>&1 | grep -oP '\d+\.\d+\.\d+')"
-fi
+# ── Couleurs ─────────────────────────────────────────────────────────
+RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[0;33m'; NC='\033[0m'
+ok()   { echo -e "  ${GREEN}✓${NC} $1"; }
+warn() { echo -e "  ${YELLOW}!${NC} $1"; }
+fail() { echo -e "  ${RED}✗${NC} $1"; }
+step() { echo -e "\n${GREEN}── $1 ──${NC}"; }
 
-# Vérifie pip
-if [ -n "$PYTHON_CMD" ]; then
-    if "$PYTHON_CMD" -m pip --version &>/dev/null; then
-        ok "pip disponible"
-    else
-        fail "pip manquant. Installe-le avec : sudo apt install python3-pip"
+echo "══════════════════════════════════════"
+echo "  hal-voice — Installation auto"
+echo "══════════════════════════════════════"
+
+# ══════════════════════════════════════════════════════════════════════
+# 1. Python 3.10+
+# ══════════════════════════════════════════════════════════════════════
+step "1/6 — Python"
+
+find_python() {
+    for cmd in python3 python; do
+        if command -v "$cmd" &>/dev/null; then
+            ver=$("$cmd" --version 2>&1 | grep -oP '\d+\.\d+')
+            major=$(echo "$ver" | cut -d. -f1)
+            minor=$(echo "$ver" | cut -d. -f2)
+            if [ "$major" -ge 3 ] && [ "$minor" -ge 10 ]; then
+                echo "$cmd"
+                return 0
+            fi
+        fi
+    done
+    return 1
+}
+
+PYTHON_CMD=$(find_python || true)
+
+if [ -z "$PYTHON_CMD" ]; then
+    fail "Python 3.10+ introuvable"
+    if $CHECK_ONLY || $SKIP_APT; then
+        echo "  Installe-le manuellement : sudo apt install python3 python3-venv python3-pip"
+        exit 1
+    fi
+    echo "  Installation de Python 3..."
+    sudo apt update -qq
+    sudo apt install -y python3 python3-venv python3-pip
+    PYTHON_CMD=$(find_python || true)
+    if [ -z "$PYTHON_CMD" ]; then
+        fail "Échec installation Python"
+        exit 1
     fi
 fi
+ok "Python $($PYTHON_CMD --version 2>&1 | grep -oP '\d+\.\d+\.\d+')"
+
+# pip
+if ! "$PYTHON_CMD" -m pip --version &>/dev/null; then
+    warn "pip manquant — installation..."
+    if ! $CHECK_ONLY && ! $SKIP_APT; then
+        sudo apt install -y python3-pip
+    fi
+fi
+"$PYTHON_CMD" -m pip --version &>/dev/null && ok "pip" || fail "pip manquant"
 
 # ══════════════════════════════════════════════════════════════════════
 # 2. Dépendances système
 # ══════════════════════════════════════════════════════════════════════
-echo ""
-echo "[2/6] Dépendances système..."
+step "2/6 — Paquets système"
 
-# Détecte le gestionnaire de paquets
-PKG_MGR=""
-if command -v apt &>/dev/null; then
-    PKG_MGR="apt"
-elif command -v dnf &>/dev/null; then
-    PKG_MGR="dnf"
-elif command -v pacman &>/dev/null; then
-    PKG_MGR="pacman"
-fi
-
-if [ -z "$PKG_MGR" ]; then
-    warn "Gestionnaire de paquets non reconnu — vérification manuelle requise"
-fi
-
-# Sous WSL2 ?
 IS_WSL=false
-if grep -qi microsoft /proc/version 2>/dev/null; then
-    IS_WSL=true
-    ok "WSL2 détecté"
-fi
+grep -qi microsoft /proc/version 2>/dev/null && IS_WSL=true
 
-# --- libportaudio2 (audio I/O) ---
-if ldconfig -p 2>/dev/null | grep -q libportaudio; then
-    ok "libportaudio2"
-elif [ -n "$PKG_MGR" ] && ! $CHECK_ONLY; then
-    warn "libportaudio2 manquant — installation..."
-    case "$PKG_MGR" in
-        apt)    sudo apt install -y libportaudio2 ;;
-        dnf)    sudo dnf install -y portaudio-devel ;;
-        pacman) sudo pacman -S --noconfirm portaudio ;;
-    esac
-    ok "libportaudio2 installé"
-else
-    fail "libportaudio2 manquant"
-fi
+install_pkg() {
+    local pkg="$1"
+    local check_cmd="${2:-$1}"
 
-# --- espeak-ng (TTS Linux) ---
-if command -v espeak-ng &>/dev/null; then
-    ok "espeak-ng"
-elif command -v espeak &>/dev/null; then
-    warn "espeak trouvé (préfère espeak-ng pour de meilleurs résultats FR)"
-elif [ -n "$PKG_MGR" ] && ! $CHECK_ONLY; then
-    warn "espeak-ng manquant — installation..."
-    case "$PKG_MGR" in
-        apt)    sudo apt install -y espeak-ng ;;
-        dnf)    sudo dnf install -y espeak-ng ;;
-        pacman) sudo pacman -S --noconfirm espeak-ng ;;
-    esac
-    ok "espeak-ng installé"
-else
-    fail "espeak-ng manquant"
-fi
+    if command -v "$check_cmd" &>/dev/null; then
+        ok "$pkg"
+        return 0
+    fi
 
-# --- pulseaudio-utils (WSL2 uniquement) ---
+    if $CHECK_ONLY || $SKIP_APT; then
+        fail "$pkg manquant"
+        return 1
+    fi
+
+    warn "$pkg manquant — installation..."
+    sudo apt install -y "$pkg" 2>/dev/null && ok "$pkg installé" || fail "échec $pkg"
+}
+
+# Toujours installés
+install_pkg libportaudio2
+install_pkg espeak-ng espeak-ng
+install_pkg curl curl
+install_pkg unzip unzip
+
+# WSL2 uniquement
 if $IS_WSL; then
-    if command -v parecord &>/dev/null; then
-        ok "pulseaudio-utils"
-    elif [ -n "$PKG_MGR" ] && ! $CHECK_ONLY; then
-        warn "pulseaudio-utils manquant — installation..."
-        case "$PKG_MGR" in
-            apt)    sudo apt install -y pulseaudio-utils ;;
-            dnf)    sudo dnf install -y pulseaudio-utils ;;
-            pacman) sudo pacman -S --noconfirm libpulse ;;
-        esac
-        ok "pulseaudio-utils installé"
-    else
-        fail "pulseaudio-utils manquant (requis pour WSL2)"
-    fi
+    install_pkg pulseaudio-utils parecord
 
-    # --- PulseAudio Windows (host) ---
-    PA_DIR="${LOCALAPPDATA:-/mnt/c/Users/*/AppData/Local}/pulseaudio/pulseaudio"
-    PA_DIR_EXPANDED=$(eval echo "$PA_DIR" 2>/dev/null | head -1)
-    if [ -f "$PA_DIR_EXPANDED/bin/pulseaudio.exe" ]; then
-        ok "PulseAudio Windows trouvé"
+    # PulseAudio Windows
+    PA_EXE="${LOCALAPPDATA:-/mnt/c/Users/*/AppData/Local}/pulseaudio/pulseaudio/bin/pulseaudio.exe"
+    PA_EXPANDED=$(eval echo "$PA_EXE" 2>/dev/null | head -1)
+    if [ -f "$PA_EXPANDED" ]; then
+        ok "PulseAudio Windows"
     else
-        warn "PulseAudio Windows non trouvé — micro indisponible sous WSL2"
-        info "Installe-le depuis : https://github.com/pgaskin/pulseaudio-win32"
+        warn "PulseAudio Windows non trouvé — micro WSL2 indisponible"
+        echo "    → https://github.com/pgaskin/pulseaudio-win32"
     fi
 fi
 
-# --- curl + unzip (téléchargement modèle Vosk) ---
-if command -v curl &>/dev/null; then
-    ok "curl"
-else
-    fail "curl manquant (requis pour télécharger le modèle Vosk)"
-fi
-
-if command -v unzip &>/dev/null; then
-    ok "unzip"
-else
-    fail "unzip manquant (requis pour extraire le modèle Vosk)"
-fi
-
 # ══════════════════════════════════════════════════════════════════════
-# 3. Python venv
+# 3. Virtual environment
 # ══════════════════════════════════════════════════════════════════════
-echo ""
-echo "[3/6] Virtual environment..."
+step "3/6 — Virtual environment"
 
 VENV_DIR="$PROJECT_DIR/.venv"
 if [ -f "$VENV_DIR/bin/activate" ]; then
-    ok "venv existant ($VENV_DIR)"
+    ok "venv existant"
 elif $CHECK_ONLY; then
     fail "venv absent"
 else
@@ -191,93 +157,74 @@ else
     ok "venv créé"
 fi
 
-if [ -f "$VENV_DIR/bin/activate" ]; then
-    # shellcheck disable=SC1091
-    source "$VENV_DIR/bin/activate"
-fi
+# shellcheck disable=SC1091
+source "$VENV_DIR/bin/activate"
 
 # ══════════════════════════════════════════════════════════════════════
 # 4. Dépendances Python
 # ══════════════════════════════════════════════════════════════════════
-echo ""
-echo "[4/6] Dépendances Python..."
+step "4/6 — Packages Python"
 
 if $CHECK_ONLY; then
-    # En mode vérification, on teste juste l'import
-    python -c "import sounddevice" 2>/dev/null && ok "sounddevice" || fail "sounddevice manquant"
-    python -c "import vosk"         2>/dev/null && ok "vosk"         || fail "vosk manquant"
-    python -c "import pynput"       2>/dev/null && ok "pynput"       || fail "pynput manquant"
-    if [[ "$(uname -s)" != *"MINGW"* ]]; then
-        python -c "import pyttsx3"  2>/dev/null && ok "pyttsx3"      || fail "pyttsx3 manquant"
-    fi
+    for mod in sounddevice soundfile vosk pynput pyttsx3; do
+        python -c "import $mod" 2>/dev/null && ok "$mod" || fail "$mod manquant"
+    done
 else
-    pip install --upgrade pip -q
-    pip install -r "$PROJECT_DIR/requirements.txt" -q
-    pip install -e "$PROJECT_DIR" -q
+    pip install --upgrade pip -q 2>/dev/null
+    pip install -r "$PROJECT_DIR/requirements.txt" -q 2>/dev/null
+    pip install -e "$PROJECT_DIR" -q 2>/dev/null
     ok "packages installés"
 fi
 
 # ══════════════════════════════════════════════════════════════════════
 # 5. Vérification des imports
 # ══════════════════════════════════════════════════════════════════════
-echo ""
-echo "[5/6] Vérification des modules Python..."
+step "5/6 — Vérification"
 
-MODULES=(
-    "sounddevice:PortAudio (sounddevice)"
-    "soundfile:soundfile"
-    "vosk:Vosk (STT)"
-    "pynput:pynput (hotkeys)"
-)
+MODULES="sounddevice:PortAudio
+soundfile:soundfile
+vosk:Vosk STT
+pynput:hotkeys
+pyttsx3:TTS"
 
-# Modules spécifiques à la plateforme
-if [[ "$(uname -s)" == *"MINGW"* ]] || [[ "$(uname -s)" == *"MSYS"* ]]; then
-    MODULES+=("win32com:pywin32 (TTS SAPI)")
-else
-    MODULES+=("pyttsx3:pyttsx3 (TTS)")
-fi
-
-for entry in "${MODULES[@]}"; do
-    mod="${entry%%:*}"
-    label="${entry#*:}"
-    python -c "import $mod" 2>/dev/null && ok "$label" || fail "$label manquant"
-done
+ALL_OK=true
+while IFS= read -r line; do
+    mod="${line%%:*}"
+    label="${line#*:}"
+    python -c "import $mod" 2>/dev/null && ok "$label" || { fail "$label"; ALL_OK=false; }
+done <<< "$MODULES"
 
 # ══════════════════════════════════════════════════════════════════════
 # 6. Modèle Vosk
 # ══════════════════════════════════════════════════════════════════════
-echo ""
-echo "[6/6] Modèle Vosk FR..."
+step "6/6 — Modèle Vosk FR"
 
 MODEL_DIR="$PROJECT_DIR/models/vosk-model-small-fr-0.22"
 if [ -d "$MODEL_DIR" ]; then
-    ok "modèle Vosk FR présent"
+    ok "modèle présent"
 elif $CHECK_ONLY; then
-    fail "modèle Vosk FR absent"
+    fail "modèle absent"
 else
-    info "Téléchargement du modèle Vosk FR (~40 Mo)..."
+    echo "  Téléchargement (~40 Mo)..."
     mkdir -p "$PROJECT_DIR/models"
-    cd "$PROJECT_DIR/models"
-    if curl -sL https://alphacephei.com/vosk/models/vosk-model-small-fr-0.22.zip -o vosk-model.zip; then
-        unzip -qo vosk-model.zip
-        rm vosk-model.zip
-        ok "modèle Vosk FR installé"
-    else
-        fail "Échec du téléchargement du modèle Vosk"
-        rm -f vosk-model.zip
-    fi
-    cd "$PROJECT_DIR"
+    (
+        cd "$PROJECT_DIR/models"
+        curl -sL --fail https://alphacephei.com/vosk/models/vosk-model-small-fr-0.22.zip \
+            -o vosk-model.zip \
+            && unzip -qo vosk-model.zip \
+            && rm vosk-model.zip \
+            && echo "OK"
+    ) && ok "modèle installé" || fail "échec téléchargement"
 fi
 
 # ══════════════════════════════════════════════════════════════════════
 # Résumé
 # ══════════════════════════════════════════════════════════════════════
 echo ""
-if [ $ERRORS -gt 0 ]; then
-    echo -e "${RED}=== Installation terminée avec $ERRORS erreur(s) ===${NC}"
-    echo "Corrige les erreurs ci-dessus puis relance : ./scripts/install.sh"
-    exit 1
+if $ALL_OK; then
+    echo -e "${GREEN}═══ Installation terminée ! ═══${NC}"
+    echo "Lance : ./scripts/run.sh"
 else
-    echo -e "${GREEN}=== Installation terminée ! ===${NC}"
-    echo "Lance hal-voice avec : ./scripts/run.sh"
+    echo -e "${YELLOW}═══ Installation terminée avec avertissements ═══${NC}"
+    echo "Certains modules manquent — lance --check pour les lister"
 fi
