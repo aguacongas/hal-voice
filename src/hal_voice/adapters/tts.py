@@ -13,7 +13,7 @@ Architecture :
 
 Sélection de la voix :
     - Si voice_name est fourni, on cherche la voix correspondante
-    - Sinon, on prend la première voix française disponible
+    - Sinon, on prend la voix FRANCE prioritaire (Sinon Belgique/Suisse)
     - Fallback : la première voix du système
 
 Flags SAPI 5 :
@@ -83,12 +83,32 @@ def _is_french(value: str | int) -> bool:
     return "fr" in tokens or "fra" in tokens or "fre" in tokens
 
 
+def _is_france(value: str | int) -> bool:
+    """Détecte spécifiquement le français de France (pas Belgique/Suisse).
+
+    - SAPI 5 : LANGID 0x040C (1036) correspond au français (France).
+    - eSpeak : 'roa/fr' (France) vs 'roa/fr-be' / 'roa/fr-ch'.
+    """
+    if isinstance(value, int):
+        return value == FRENCH_LANG_ID
+    try:
+        if int(value, 16) == FRENCH_LANG_ID:
+            return True
+    except (ValueError, TypeError):
+        pass
+    s = str(value).strip().lower().replace("_", "-").replace("/", "-")
+    parts = s.split("-")
+    # France si le dernier token est exactement 'fr' (et pas 'fr-be'/'fr-ch')
+    return parts[-1] == "fr" and not parts[-1].endswith(("be", "ch"))
+
+
 def _select_voice(setter, voices, voice_name: str | None, get_desc, get_attr, set_prop) -> str:
     """Logique commune de sélection de voix.
 
     1. Si voice_name fourni → cherche par nom
-    2. Sinon → première voix FR (supporte SAPI hex + BCP 47)
-    3. Fallback → première voix du système
+    2. Sinon → voix FRANCE prioritaire ('roa/fr' / 0x040C)
+    3. Sinon → n'importe quelle voix FR (Belgique, Suisse, ...)
+    4. Fallback → première voix du système
     """
     target = None
     if voice_name:
@@ -99,6 +119,16 @@ def _select_voice(setter, voices, voice_name: str | None, get_desc, get_attr, se
         if target is None:
             log.warning("Voix %r introuvable, fallback sur la 1ere voix FR.", voice_name)
 
+    # Priorité : français de France
+    if target is None:
+        for v in voices:
+            if _is_france(get_attr(v)):
+                target = v
+                break
+        if target is not None:
+            log.info("Voix FR (France) trouvée.")
+
+    # Sinon : n'importe quel français
     if target is None:
         for v in voices:
             if _is_french(get_attr(v)):
