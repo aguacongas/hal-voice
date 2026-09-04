@@ -59,12 +59,12 @@ jobs:
     name: SonarCloud
     runs-on: ubuntu-latest
     needs: test
-    # Les secrets ne sont pas lisibles dans `if` ; on les expose dans l'env
-    # du job pour tester leur presence. Job skip tant que SONAR_TOKEN n'est
-    # pas configure (Settings -> Secrets -> Actions).
+    # Le token (secret) n'est pas utilisable dans un `if` de job (contextes
+    # `env` interdits au niveau job). On l'expose dans l'env du job et on
+    # ne gate que l'etape de scan : sans SONAR_TOKEN, l'analyse est skippee
+    # et le job passe proprement (Settings -> Secrets -> Actions).
     env:
       SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-    if: ${{ env.SONAR_TOKEN != '' }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -73,6 +73,7 @@ jobs:
         with:
           name: coverage
       - name: Scan SonarCloud
+        if: ${{ env.SONAR_TOKEN != '' }}
         uses: SonarSource/sonarqube-scan-action@v5
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
