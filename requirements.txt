@@ -1,25 +1,24 @@
 # Audio I/O
-sounddevice>=0.4.6
-soundfile>=0.12.1
+sounddevice>=0.5.6
+soundfile>=0.14.0
 
 # Speech-to-Text (Vosk, offline FR)
 vosk>=0.3.45
 
 # Windows-specific (TTS SAPI + hotkey global)
 pywin32>=306; sys_platform == "win32"
-keyboard>=0.13.5; sys_platform == "win32"
 
 # Linux/WSL-specific (TTS pyttsx3 + eSpeak)
-pyttsx3>=2.90; sys_platform != "win32"
+pyttsx3>=2.99; sys_platform != "win32"
 
 # Hotkey cross-platform
-pynput>=1.7.6
+pynput>=1.8.2
 
 # Config
-pyyaml>=6.0
+pyyaml>=6.0.2
 
 # Tests
-pytest>=8.0
+pytest>=9.1.1
 
 # vosk transitive
 requests>=2.31
