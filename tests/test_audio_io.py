@@ -5,11 +5,9 @@ Utilise sounddevice et mocks pour valider le comportement.
 
 from __future__ import annotations
 
-from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import numpy as np
-import pytest
 import sounddevice as sd
 
 from hal_voice.adapters.audio_io import AudioIO
@@ -41,18 +39,15 @@ def test_instantiation_accepts_overrides() -> None:
 
 def test_list_devices_returns_list(monkeypatch) -> None:
     """list_devices() retourne la liste des devices audio."""
-    fake_devices = [
-        {'name': 'Mic 1', 'hostapi': 0},
-        {'name': 'Speaker 1', 'hostapi': 0}
-    ]
+    fake_devices = [{"name": "Mic 1", "hostapi": 0}, {"name": "Speaker 1", "hostapi": 0}]
     monkeypatch.setattr(sd, "query_devices", lambda: fake_devices)
-    
+
     io = AudioIO()
     devices = io.list_devices()
     assert isinstance(devices, list)
     assert len(devices) == 2
-    assert devices[0]['name'] == 'Mic 1'
-    assert devices[0]['index'] == 0
+    assert devices[0]["name"] == "Mic 1"
+    assert devices[0]["index"] == 0
 
 
 # ── Capture ──────────────────────────────────────────────────────
@@ -63,13 +58,13 @@ def test_record_calls_sd_rec(monkeypatch) -> None:
     # On mock sd.rec pour renvoyer un array de la bonne taille
     n_samples = int(0.5 * DEFAULT_SAMPLE_RATE)
     mock_audio = np.zeros(n_samples, dtype=np.int16)
-    
+
     monkeypatch.setattr(sd, "rec", MagicMock(return_value=mock_audio))
     monkeypatch.setattr(sd, "wait", MagicMock())
-    
+
     io = AudioIO()
     audio = io.record(duration_seconds=0.5)
-    
+
     sd.rec.assert_called_once_with(
         n_samples,
         samplerate=DEFAULT_SAMPLE_RATE,
@@ -83,10 +78,10 @@ def test_record_calls_sd_rec(monkeypatch) -> None:
 def test_record_handles_exception(monkeypatch) -> None:
     """Si sd.rec échoue, record() renvoie du silence."""
     monkeypatch.setattr(sd, "rec", MagicMock(side_effect=Exception("Audio Error")))
-    
+
     io = AudioIO()
     audio = io.record(duration_seconds=0.25)
-    
+
     n = int(0.25 * DEFAULT_SAMPLE_RATE)
     assert audio.shape == (n, 1)
     assert (audio == 0).all()
@@ -99,11 +94,11 @@ def test_play_calls_sd_play(monkeypatch) -> None:
     """play() appelle sd.play et sd.wait."""
     monkeypatch.setattr(sd, "play", MagicMock())
     monkeypatch.setattr(sd, "wait", MagicMock())
-    
+
     io = AudioIO()
     data = np.zeros(100, dtype=np.int16)
     io.play(data)
-    
+
     sd.play.assert_called_once()
     sd.wait.assert_called_once()
 
@@ -111,7 +106,7 @@ def test_play_calls_sd_play(monkeypatch) -> None:
 def test_play_handles_exception(monkeypatch) -> None:
     """Si sd.play échoue, play() ne lève pas d'exception."""
     monkeypatch.setattr(sd, "play", MagicMock(side_effect=Exception("Play Error")))
-    
+
     io = AudioIO()
     data = np.zeros(100, dtype=np.int16)
     # Ne doit pas planter
@@ -128,11 +123,12 @@ def test_record_to_file_delegates(tmp_path, monkeypatch) -> None:
     monkeypatch.setattr(io, "record", lambda duration: np.zeros((16000, 1), dtype=np.int16))
     # Mock sf.write
     import soundfile as sf
+
     monkeypatch.setattr(sf, "write", MagicMock())
-    
+
     out_path = tmp_path / "test.wav"
     result = io.record_to_file(out_path, 1.0)
-    
+
     assert result == out_path
     sf.write.assert_called_once()
 
@@ -140,14 +136,15 @@ def test_record_to_file_delegates(tmp_path, monkeypatch) -> None:
 def test_play_file_delegates(monkeypatch) -> None:
     """play_file lit le fichier et appelle play."""
     io = AudioIO()
-    
+
     # Mock sf.read pour renvoyer un faux audio
     import soundfile as sf
+
     fake_audio = np.zeros((100, 1), dtype=np.float32)
     monkeypatch.setattr(sf, "read", lambda p: (fake_audio, 16000))
-    
+
     # Mock io.play
     monkeypatch.setattr(io, "play", MagicMock())
-    
+
     io.play_file("fake.wav")
     io.play.assert_called_once()

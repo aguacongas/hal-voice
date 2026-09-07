@@ -8,8 +8,9 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-import sounddevice as sd
+
 import numpy as np
+import sounddevice as sd
 import soundfile as sf
 
 from hal_voice.domain.config import DEFAULT_CHANNELS, DEFAULT_DTYPE, DEFAULT_SAMPLE_RATE
@@ -35,27 +36,31 @@ class AudioIO:
         self.output_device = output_device
 
         # Utilisation des devices par défaut si aucun n'est spécifié
-        self._input_id = self.input_device if self.input_device is not None else sd.default.device[0]
-        self._output_id = self.output_device if self.output_device is not None else sd.default.device[1]
-        
+        self._input_id = (
+            self.input_device if self.input_device is not None else sd.default.device[0]
+        )
+        self._output_id = (
+            self.output_device if self.output_device is not None else sd.default.device[1]
+        )
+
         log.info("AudioIO initialisé : input=%s, output=%s", self._input_id, self._output_id)
 
     def list_devices(self) -> list[dict]:
         """Retourne la liste des devices audio détectés."""
         devices = sd.query_devices()
-        return [{"index": i, "name": d['name']} for i, d in enumerate(devices)]
+        return [{"index": i, "name": d["name"]} for i, d in enumerate(devices)]
 
     def default_input_name(self) -> str:
         """Retourne le nom du device d'entrée par défaut."""
         try:
-            return sd.query_devices(self._input_id)['name']
+            return sd.query_devices(self._input_id)["name"]
         except Exception:
             return "unknown"
 
     def default_output_name(self) -> str:
         """Retourne le nom du device de sortie par défaut."""
         try:
-            return sd.query_devices(self._output_id)['name']
+            return sd.query_devices(self._output_id)["name"]
         except Exception:
             return "unknown"
 
@@ -123,6 +128,7 @@ def quick_test() -> None:
         print("Replay...")
         io.play(audio)
     print("Fin.")
+
 
 if __name__ == "__main__":
     quick_test()
