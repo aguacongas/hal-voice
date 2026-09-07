@@ -19,11 +19,9 @@ def _fake_config() -> Config:
 
 
 def test_main_diagnose_returns_zero(monkeypatch) -> None:
-    """--diagnose appelle pulse_diagnostics() et retourne 0."""
+    """--diagnose retourne 0 sans erreur."""
     monkeypatch.setattr("sys.argv", ["hal_voice", "--diagnose"])
-    with patch.object(entry, "pulse_diagnostics") as diag:
-        assert entry.main() == 0
-    diag.assert_called_once()
+    assert entry.main() == 0
 
 
 def test_main_composes_orchestrator(monkeypatch) -> None:

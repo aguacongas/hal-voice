@@ -1,21 +1,16 @@
 """
 Tests audio_io — sans dépendance matérielle pour les tests unitaires.
-
-Les tests qui capturent réellement le micro sont marqués ``requires_hardware``
-et ne sont joués que sur les machines avec une carte son active.
+Utilise sounddevice et mocks pour valider le comportement.
 """
 
 from __future__ import annotations
 
-import os
-import subprocess
-import tempfile
 from pathlib import Path
-from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import numpy as np
 import pytest
+import sounddevice as sd
 
 from hal_voice.adapters.audio_io import AudioIO
 from hal_voice.domain.config import DEFAULT_CHANNELS, DEFAULT_DTYPE, DEFAULT_SAMPLE_RATE
@@ -44,615 +39,115 @@ def test_instantiation_accepts_overrides() -> None:
     assert io.dtype == "float32"
 
 
-def test_list_devices_returns_list() -> None:
-    """list_devices() retourne la liste des sources PulseAudio."""
+def test_list_devices_returns_list(monkeypatch) -> None:
+    """list_devices() retourne la liste des devices audio."""
+    fake_devices = [
+        {'name': 'Mic 1', 'hostapi': 0},
+        {'name': 'Speaker 1', 'hostapi': 0}
+    ]
+    monkeypatch.setattr(sd, "query_devices", lambda: fake_devices)
+    
     io = AudioIO()
     devices = io.list_devices()
     assert isinstance(devices, list)
-    if devices:
-        assert "name" in devices[0]
-        assert "index" in devices[0]
+    assert len(devices) == 2
+    assert devices[0]['name'] == 'Mic 1'
+    assert devices[0]['index'] == 0
 
 
-@pytest.mark.requires_hardware
-def test_record_returns_correct_shape() -> None:
-    """record() retourne un array int16 de la bonne forme.
+# ── Capture ──────────────────────────────────────────────────────
 
-    Shape attendue : (n_samples, 1) où n_samples = duration × sample_rate.
-    Le 2e dimension (1) est pour le canal mono.
-    """
+
+def test_record_calls_sd_rec(monkeypatch) -> None:
+    """record() appelle sd.rec avec les bons paramètres."""
+    # On mock sd.rec pour renvoyer un array de la bonne taille
+    n_samples = int(0.5 * DEFAULT_SAMPLE_RATE)
+    mock_audio = np.zeros(n_samples, dtype=np.int16)
+    
+    monkeypatch.setattr(sd, "rec", MagicMock(return_value=mock_audio))
+    monkeypatch.setattr(sd, "wait", MagicMock())
+    
     io = AudioIO()
     audio = io.record(duration_seconds=0.5)
-    assert audio.shape == (int(0.5 * DEFAULT_SAMPLE_RATE), 1)
-    assert audio.dtype.name == "int16"
+    
+    sd.rec.assert_called_once_with(
+        n_samples,
+        samplerate=DEFAULT_SAMPLE_RATE,
+        channels=DEFAULT_CHANNELS,
+        dtype=np.int16,
+        device=io._input_id,
+    )
+    assert audio.shape == (n_samples, 1)
 
 
-# ── Gestion d'erreurs audio (device indisponible) ────────────────────
-
-
-def test_record_pulse_returns_silence_without_device() -> None:
-    """Sans device PulseAudio, record() renvoie un buffer de silence."""
+def test_record_handles_exception(monkeypatch) -> None:
+    """Si sd.rec échoue, record() renvoie du silence."""
+    monkeypatch.setattr(sd, "rec", MagicMock(side_effect=Exception("Audio Error")))
+    
     io = AudioIO()
-    io._pulse_input = None
     audio = io.record(duration_seconds=0.25)
+    
     n = int(0.25 * DEFAULT_SAMPLE_RATE)
     assert audio.shape == (n, 1)
     assert (audio == 0).all()
 
 
-def test_record_pulse_handles_missing_parecord(monkeypatch) -> None:
-    """Si parecord est introuvable, record() renvoie du silence."""
+# ── Lecture ──────────────────────────────────────────────────────
+
+
+def test_play_calls_sd_play(monkeypatch) -> None:
+    """play() appelle sd.play et sd.wait."""
+    monkeypatch.setattr(sd, "play", MagicMock())
+    monkeypatch.setattr(sd, "wait", MagicMock())
+    
     io = AudioIO()
-    io._pulse_input = "wavein"
-    io._pulse_server = None
-
-    def _raising_popen(*a, **k):
-        raise FileNotFoundError("parecord")
-
-    monkeypatch.setattr("hal_voice.adapters.audio_io.subprocess.Popen", _raising_popen)
-    audio = io.record(0.25)
-    n = int(0.25 * DEFAULT_SAMPLE_RATE)
-    assert audio.shape == (n, 1)
-    assert (audio == 0).all()
-
-
-def test_play_pulse_ignores_paplay_error(monkeypatch, tmp_path) -> None:
-    """Si paplay échoue, play() ne lève pas d'exception."""
-    io = AudioIO()
-    io._pulse_output = "waveout"
-    io._pulse_server = None
-
-    def _raising_run(*a, **k):
-        raise FileNotFoundError("paplay")
-
-    monkeypatch.setattr("hal_voice.adapters.audio_io.subprocess.run", _raising_run)
     data = np.zeros(100, dtype=np.int16)
-    io._play_pulse(data, sample_rate=16000)  # ne doit pas lever
-
-
-# ── Fonctions utilitaires WSL / PulseAudio ────────────────────────────
-
-
-def test_is_wsl_non_linux(monkeypatch) -> None:
-    import hal_voice.adapters.audio_io as m
-
-    monkeypatch.setattr("sys.platform", "win32")
-    assert m._is_wsl() is False
-
-
-def test_is_wsl_linux_with_microsoft(monkeypatch) -> None:
-    import hal_voice.adapters.audio_io as m
-
-    monkeypatch.setattr("sys.platform", "linux")
-    monkeypatch.setattr(m.Path, "read_text", lambda self: "microsoft standard WSL2\n")
-    assert m._is_wsl() is True
-
-
-def test_is_wsl_linux_oserror(monkeypatch) -> None:
-    import hal_voice.adapters.audio_io as m
-
-    monkeypatch.setattr("sys.platform", "linux")
-
-    def _boom(self, *a, **k):
-        raise OSError("nope")
-
-    monkeypatch.setattr(Path, "read_text", _boom)
-    assert m._is_wsl() is False
-
-
-def test_get_windows_host_ip(monkeypatch) -> None:
-    import hal_voice.adapters.audio_io as m
-
-    monkeypatch.setattr(
-        m.subprocess, "check_output", lambda *a, **k: "default via 172.20.1.1 dev eth0\n"
-    )
-    assert m._get_windows_host_ip() == "172.20.1.1"
-
-
-def test_get_windows_host_ip_errors(monkeypatch) -> None:
-    import hal_voice.adapters.audio_io as m
-
-    monkeypatch.setattr(m.subprocess, "check_output", lambda *a, **k: "short\n")
-    assert m._get_windows_host_ip() is None
-
-    def _raise(*a, **k):
-        raise FileNotFoundError("ip")
-
-    monkeypatch.setattr(m.subprocess, "check_output", _raise)
-    assert m._get_windows_host_ip() is None
-
-
-def test_pulse_find_server_uses_tcp_host(monkeypatch) -> None:
-    import hal_voice.adapters.audio_io as m
-
-    monkeypatch.setattr(m, "_get_windows_host_ip", lambda: "172.20.1.1")
-    monkeypatch.setattr(m.subprocess, "run", MagicMock())
-    assert m._pulse_find_server() == "tcp:172.20.1.1"
-
-
-def test_pulse_find_server_falls_back_when_unreachable(monkeypatch) -> None:
-    import hal_voice.adapters.audio_io as m
-
-    monkeypatch.setattr(m, "_get_windows_host_ip", lambda: "172.20.1.1")
-
-    def _fail(*a, **k):
-        raise subprocess.CalledProcessError(1, "pactl")
-
-    monkeypatch.setattr(m.subprocess, "run", _fail)
-    assert m._pulse_find_server() is None
-
-
-def test_pulse_find_server_no_host(monkeypatch) -> None:
-    import hal_voice.adapters.audio_io as m
-
-    monkeypatch.setattr(m, "_get_windows_host_ip", lambda: None)
-    assert m._pulse_find_server() is None
-
-
-def test_pulse_list_sources_parses_lines(monkeypatch) -> None:
-    import hal_voice.adapters.audio_io as m
-
-    monkeypatch.setattr(
-        m.subprocess,
-        "check_output",
-        lambda *a, **k: "0\talsa_input.usb-Mic\n1\twavein\n",
-    )
-    sources = m._pulse_list_sources("tcp:1.2.3.4")
-    assert sources == [{"index": 0, "name": "alsa_input.usb-Mic"}, {"index": 1, "name": "wavein"}]
-
-
-def test_pulse_list_sources_empty_on_error(monkeypatch) -> None:
-    import hal_voice.adapters.audio_io as m
-
-    def _raise(*a, **k):
-        raise FileNotFoundError("pactl")
-
-    monkeypatch.setattr(m.subprocess, "check_output", _raise)
-    assert m._pulse_list_sources("server") == []
-
-
-def test_source_marker_patterns() -> None:
-    import hal_voice.adapters.audio_io as m
-
-    assert "MONITOR" in m._source_marker("alsa_output.pci.monitor")
-    assert "MICRO" in m._source_marker("alsa_input.usb-mic")
-    assert "MICRO" in m._source_marker("wavein")
-    assert "RDP" in m._source_marker("rdpsource")
-    assert m._source_marker("autre_source") == ""
-
-
-def test_pulse_find_input_device_single_candidate(monkeypatch) -> None:
-    import hal_voice.adapters.audio_io as m
-
-    monkeypatch.setattr(
-        m, "_pulse_list_sources", lambda s: [{"index": 0, "name": "alsa_input.mic"}]
-    )
-    assert m._pulse_find_input_device() == "alsa_input.mic"
-
-
-def test_pulse_find_input_device_skips_monitor_and_uses_rdp_fallback(monkeypatch) -> None:
-    import hal_voice.adapters.audio_io as m
-
-    monkeypatch.setattr(
-        m,
-        "_pulse_list_sources",
-        lambda s: [
-            {"index": 0, "name": "alsa_output.monitor"},
-            {"index": 1, "name": "rdpsource.0"},
-        ],
-    )
-    assert m._pulse_find_input_device() == "rdpsource.0"
-
-
-def test_pulse_find_input_device_picks_best_amplitude(monkeypatch) -> None:
-    import hal_voice.adapters.audio_io as m
-
-    monkeypatch.setattr(m, "_windows_default_mic", lambda: None)
-    monkeypatch.setattr(
-        m,
-        "_pulse_list_sources",
-        lambda s: [{"index": 0, "name": "src_a"}, {"index": 1, "name": "src_b"}],
-    )
-    monkeypatch.setattr(
-        m, "_test_source_amplitude", lambda src, srv, duration: 500 if src == "src_b" else 50
-    )
-    assert m._pulse_find_input_device() == "src_b"
-
-
-def test_pulse_find_input_device_fallback_first_when_low_amp(monkeypatch) -> None:
-    import hal_voice.adapters.audio_io as m
-
-    monkeypatch.setattr(m, "_windows_default_mic", lambda: None)
-    monkeypatch.setattr(
-        m,
-        "_pulse_list_sources",
-        lambda s: [{"index": 0, "name": "src_a"}, {"index": 1, "name": "src_b"}],
-    )
-    monkeypatch.setattr(m, "_test_source_amplitude", lambda src, srv, duration: 10)
-    assert m._pulse_find_input_device() == "src_a"
-
-
-def test_pulse_find_output_device_returns_first(monkeypatch) -> None:
-    import hal_voice.adapters.audio_io as m
-
-    monkeypatch.setattr(
-        m.subprocess, "check_output", lambda *a, **k: "0\talsa_output.pci.waveout\n1\tredir\n"
-    )
-    assert m._pulse_find_output_device() == "alsa_output.pci.waveout"
-
-
-def test_pulse_find_output_device_empty_on_error(monkeypatch) -> None:
-    import hal_voice.adapters.audio_io as m
-
-    def _raise(*a, **k):
-        raise subprocess.CalledProcessError(1, "pactl")
-
-    monkeypatch.setattr(m.subprocess, "check_output", _raise)
-    assert m._pulse_find_output_device() is None
-
-
-def test_pulse_find_output_device_none_without_parts(monkeypatch) -> None:
-    import hal_voice.adapters.audio_io as m
-
-    monkeypatch.setattr(m.subprocess, "check_output", lambda *a, **k: "\n")
-    assert m._pulse_find_output_device() is None
-
-
-def test_test_source_amplitude_returns_max(monkeypatch, tmp_path) -> None:
-    import hal_voice.adapters.audio_io as m
-
-    fd, raw = tempfile.mkstemp(suffix=".raw")
-    os.close(fd)
-    Path(raw).write_bytes(b"\x5c\x03" * 200 + b"\x00\x00" * 200)  # max ~860 en tête
-
-    proc = MagicMock()
-    monkeypatch.setattr(m.tempfile, "mkstemp", lambda *a, **k: (fd, raw))
-    monkeypatch.setattr(m.os, "close", lambda *a, **k: None)
-    monkeypatch.setattr(m.subprocess, "Popen", lambda *a, **k: proc)
-    monkeypatch.setattr(m.time, "monotonic", lambda: 0.0)
-    monkeypatch.setattr(m.time, "sleep", lambda s: None)
-    # La boucle lit la taille reelle du fichier (400 octets) >= expected_bytes
-    assert m._test_source_amplitude("src", duration=0.01) > 0
-    proc.terminate.assert_called_once()
-
-
-def test_test_source_amplitude_missing_parecord(monkeypatch, tmp_path) -> None:
-    import hal_voice.adapters.audio_io as m
-
-    def _raise(*a, **k):
-        raise FileNotFoundError("parecord")
-
-    monkeypatch.setattr(m.subprocess, "Popen", _raise)
-    assert m._test_source_amplitude("src") == 0
-
-
-# ── Micro par défaut Windows (alternative au test d'amplitude) ──────────
-
-
-def test_windows_default_mic_parses_output(monkeypatch) -> None:
-    import hal_voice.adapters.audio_io as m
-
-    fake = m.subprocess.CompletedProcess(
-        args=[],
-        returncode=0,
-        stdout=(
-            "index=0\n"
-            "name=Microphone sur casque (Microsoft USB Link)\n"
-            "szpname=Microphone sur casque (Microsof\n"
-        ),
-    )
-    monkeypatch.setattr(m.shutil, "which", lambda *a, **k: "powershell.exe")
-    monkeypatch.setattr(m.subprocess, "run", lambda *a, **k: fake)
-    result = m._windows_default_mic()
-    assert result is not None
-    assert result["index"] == "0"
-    assert "Microsoft USB Link" in result["name"]
-    assert result["szpname"].startswith("Microphone sur casque")
-
-
-def test_windows_default_mic_none_without_powershell(monkeypatch) -> None:
-    import hal_voice.adapters.audio_io as m
-
-    monkeypatch.setattr(m.shutil, "which", lambda *a, **k: None)
-    assert m._windows_default_mic() is None
-
-
-def test_windows_default_mic_none_on_error(monkeypatch) -> None:
-    import hal_voice.adapters.audio_io as m
-
-    monkeypatch.setattr(m.shutil, "which", lambda *a, **k: "powershell.exe")
-
-    def _raise(*a, **k):
-        raise OSError("boom")
-
-    monkeypatch.setattr(m.subprocess, "run", _raise)
-    assert m._windows_default_mic() is None
-
-
-def test_windows_default_mic_none_without_index(monkeypatch) -> None:
-    import hal_voice.adapters.audio_io as m
-
-    fake = m.subprocess.CompletedProcess(args=[], returncode=0, stdout="name=truc\n")
-    monkeypatch.setattr(m.shutil, "which", lambda *a, **k: "powershell.exe")
-    monkeypatch.setattr(m.subprocess, "run", lambda *a, **k: fake)
-    assert m._windows_default_mic() is None
-
-
-def test_pulse_list_sources_detailed_parses_descriptions(monkeypatch) -> None:
-    import hal_voice.adapters.audio_io as m
-
-    out = (
-        "Source #0\n"
-        "\tState: RUNNING\n"
-        "\tName: wavein\n"
-        "\tDescription: WaveIn on Microphone sur casque (Microsof\n"
-        "\tProperties:\n"
-        '\t\tdevice.description = "WaveIn on Microphone sur casque (Microsof"\n'
-        '\t\tdevice.icon_name = "audio-input-microphone"\n'
-        "Source #1\n"
-        "\tState: RUNNING\n"
-        "\tName: waveout.monitor\n"
-        '\t\tdevice.description = "Monitor of WaveOut on Microsoft Sound Mapper"\n'
-    )
-    monkeypatch.setattr(m.subprocess, "check_output", lambda *a, **k: out)
-    detailed = m._pulse_list_sources_detailed("tcp:1.2.3.4")
-    assert detailed["wavein"] == "WaveIn on Microphone sur casque (Microsof"
-    assert "Monitor of WaveOut" in detailed["waveout.monitor"]
-
-
-def test_pulse_list_sources_detailed_empty_on_error(monkeypatch) -> None:
-    import hal_voice.adapters.audio_io as m
-
-    def _raise(*a, **k):
-        raise subprocess.CalledProcessError(1, "pactl")
-
-    monkeypatch.setattr(m.subprocess, "check_output", _raise)
-    assert m._pulse_list_sources_detailed("server") == {}
-
-
-def test_description_matches_wavein() -> None:
-    import hal_voice.adapters.audio_io as m
-
-    assert m._description_matches_wavein(
-        "WaveIn on Microphone sur casque (Microsof", "Microphone sur casque (Microsof"
-    )
-    assert not m._description_matches_wavein("WaveIn on Jabra Headset", "Microphone Realtek")
-    assert not m._description_matches_wavein("", "Microphone")
-    assert not m._description_matches_wavein("WaveIn on Jabra", "")
-
-
-def test_pulse_find_input_device_prefers_windows_default(monkeypatch) -> None:
-    """Avec le micro par défaut Windows, aucune source n'est testée en amplitude."""
-    import hal_voice.adapters.audio_io as m
-
-    called_amp = []
-
-    def _amp(*a, **k):
-        called_amp.append(True)
-        return 1000
-
-    monkeypatch.setattr(
-        m,
-        "_pulse_list_sources",
-        lambda s: [{"index": 0, "name": "wavein"}, {"index": 1, "name": "deal_sound"}],
-    )
-    monkeypatch.setattr(
-        m,
-        "_windows_default_mic",
-        lambda: {
-            "index": "0",
-            "name": "Microphone sur casque (Microsoft USB Link)",
-            "szpname": "Microphone sur casque (Microsof",
-        },
-    )
-    monkeypatch.setattr(
-        m,
-        "_pulse_list_sources_detailed",
-        lambda s: {
-            "wavein": "WaveIn on Microphone sur casque (Microsof",
-            "deal_sound": "WaveIn on Autre",
-        },
-    )
-    monkeypatch.setattr(m, "_test_source_amplitude", _amp)
-    assert m._pulse_find_input_device() == "wavein"
-    assert called_amp == []
-
-
-def test_pulse_find_input_device_warns_when_default_not_exposed(monkeypatch) -> None:
-    import hal_voice.adapters.audio_io as m
-
-    monkeypatch.setattr(
-        m,
-        "_pulse_list_sources",
-        lambda s: [{"index": 0, "name": "wavein"}, {"index": 1, "name": "other"}],
-    )
-    monkeypatch.setattr(
-        m,
-        "_windows_default_mic",
-        lambda: {"index": "0", "name": "Micro casque", "szpname": "Micro casque"},
-    )
-    monkeypatch.setattr(m, "_pulse_list_sources_detailed", lambda s: {"wavein": "WaveIn on Jabra"})
-    monkeypatch.setattr(
-        m,
-        "_test_source_amplitude",
-        lambda src, srv, duration: 400 if src == "other" else 50,
-    )
-    with patch("hal_voice.adapters.audio_io.log.warning") as warn:
-        assert m._pulse_find_input_device() == "other"
-    assert any("halvoice.pa" in str(call) for call in warn.call_args_list)
-
-
-# ── AudioIO : chemins heureux et API ──────────────────────────────────
-
-
-def test_default_names_return_empty_without_devices() -> None:
+    io.play(data)
+    
+    sd.play.assert_called_once()
+    sd.wait.assert_called_once()
+
+
+def test_play_handles_exception(monkeypatch) -> None:
+    """Si sd.play échoue, play() ne lève pas d'exception."""
+    monkeypatch.setattr(sd, "play", MagicMock(side_effect=Exception("Play Error")))
+    
     io = AudioIO()
-    io._pulse_input = None
-    io._pulse_output = None
-    assert io.default_input_name() == ""
-    assert io.default_output_name() == ""
+    data = np.zeros(100, dtype=np.int16)
+    # Ne doit pas planter
+    io.play(data)
 
 
-def test_list_devices_delegates(monkeypatch) -> None:
-    import hal_voice.adapters.audio_io as m
+# ── Fichiers ────────────────────────────────────────────────────
 
-    fake = [{"index": 0, "name": "wavein"}]
-    monkeypatch.setattr(m, "_pulse_list_sources", lambda s: fake)
+
+def test_record_to_file_delegates(tmp_path, monkeypatch) -> None:
+    """record_to_file appelle record et sf.write."""
     io = AudioIO()
-    monkeypatch.setattr(io, "_pulse_server", None)
-    assert io.list_devices() == fake
-
-
-def test_record_pulse_happy_path(monkeypatch, tmp_path) -> None:
-    """_record_pulse capture des données et renvoie un array reshape (-1, 1)."""
-    io = AudioIO()
-    io._pulse_input = "wavein"
-    io._pulse_server = None
-    io.sample_rate = 16000
-    io.channels = 1
-
-    fd, raw = tempfile.mkstemp(suffix=".raw")
-    os.close(fd)
-    Path(raw).write_bytes(b"\x01\x00" * 16000)  # 16000 échantillons int16
-
-    proc = MagicMock()
-    proc.communicate.return_value = (b"", b"")
-    proc.stderr = b""
-
-    state = {"size": 0}
-
-    def _stat_side(self):
-        state["size"] = 32000  # le fichier grossit au 2e appel
-        return SimpleNamespace(st_size=state["size"])
-
-    monkeypatch.setattr("tempfile.mkstemp", lambda *a, **k: (fd, raw))
-    monkeypatch.setattr("hal_voice.adapters.audio_io.os.close", lambda fd: None)
-    monkeypatch.setattr("hal_voice.adapters.audio_io.subprocess.Popen", lambda *a, **k: proc)
-    monkeypatch.setattr(Path, "stat", _stat_side)
-    monkeypatch.setattr("hal_voice.adapters.audio_io.time.monotonic", lambda: 0.0)
-    monkeypatch.setattr("hal_voice.adapters.audio_io.time.sleep", lambda s: None)
-
-    audio = io._record_pulse(1.0)
-    assert audio.shape[1] == 1
-    assert (audio != 0).any()
-
-
-def test_record_pulse_returns_silence_no_device(monkeypatch) -> None:
-    import hal_voice.adapters.audio_io as m
-
-    io = AudioIO()
-    io._pulse_input = None
-    with monkeypatch.context() as mc:
-        mc.setattr(m.log, "warning", lambda *a, **k: None)
-        audio = io._record_pulse(0.5)
-    n = int(0.5 * 16000)
-    assert audio.shape == (n, 1)
-    assert (audio == 0).all()
-
-
-def test_play_pulse_happy_path(monkeypatch) -> None:
-    """_play_pulse écrit un WAV et le joue via paplay."""
-    io = AudioIO()
-    io._pulse_output = "waveout"
-    io._pulse_server = None
-    io.sample_rate = 16000
-
-    class _FakeNamedTemp:
-        def __init__(self, **k):
-            self.name = "fake_pulse.wav"
-
-        def __enter__(self):
-            return self
-
-        def __exit__(self, *a):
-            return False
-
-    monkeypatch.setattr("hal_voice.adapters.audio_io.tempfile.NamedTemporaryFile", _FakeNamedTemp)
-    monkeypatch.setattr("hal_voice.adapters.audio_io.sf.write", lambda *a, **k: None)
-    monkeypatch.setattr("hal_voice.adapters.audio_io.subprocess.run", MagicMock())
-
-    io._play_pulse(np.zeros(100, dtype=np.int16), sample_rate=16000)
-
-
-def test_record_to_file_writes_wav(tmp_path, monkeypatch) -> None:
-    io = AudioIO()
+    # Mock record pour éviter l'appel au hardware
     monkeypatch.setattr(io, "record", lambda duration: np.zeros((16000, 1), dtype=np.int16))
-    monkeypatch.setattr("hal_voice.adapters.audio_io.sf.write", lambda *a, **k: None)
-    out = io.record_to_file(tmp_path / "out.wav", 1.0)
-    assert out == tmp_path / "out.wav"
+    # Mock sf.write
+    import soundfile as sf
+    monkeypatch.setattr(sf, "write", MagicMock())
+    
+    out_path = tmp_path / "test.wav"
+    result = io.record_to_file(out_path, 1.0)
+    
+    assert result == out_path
+    sf.write.assert_called_once()
 
 
-def test_play_file_single_channel(monkeypatch) -> None:
+def test_play_file_delegates(monkeypatch) -> None:
+    """play_file lit le fichier et appelle play."""
     io = AudioIO()
-    data = np.zeros(100, dtype=np.float64)
-    monkeypatch.setattr("hal_voice.adapters.audio_io.sf.read", lambda p: (data, 16000))
-    played = []
-    monkeypatch.setattr(io, "play", lambda a, sample_rate: played.append((a, sample_rate)))
-    io.play_file("file.wav")
-    assert played
-
-
-def test_play_file_stereo_mixes_and_converts(monkeypatch) -> None:
-    io = AudioIO()
-    io.channels = 1
-    io.dtype = "int16"
-    stereo = np.zeros((100, 2), dtype=np.float64)
-    monkeypatch.setattr("hal_voice.adapters.audio_io.sf.read", lambda p: (stereo, 16000))
-    played = []
-    monkeypatch.setattr(io, "play", lambda a, sample_rate: played.append((a, sample_rate)))
-    io.play_file("file.wav")
-    assert played
-
-
-# ── pulse_diagnostics ─────────────────────────────────────────────────
-
-
-def test_pulse_diagnostics_skips_non_wsl(monkeypatch) -> None:
-    import hal_voice.adapters.audio_io as m
-
-    monkeypatch.setattr(m, "_is_wsl", lambda: False)
-    with patch("builtins.print") as p:
-        m.pulse_diagnostics()
-    p.assert_any_call("Pas sous WSL2 — skip diagnostics PulseAudio")
-
-
-def test_pulse_diagnostics_full_flow(monkeypatch) -> None:
-    import hal_voice.adapters.audio_io as m
-
-    monkeypatch.setattr(m, "_is_wsl", lambda: True)
-    monkeypatch.setattr(m, "_windows_default_mic", lambda: None)
-    monkeypatch.setattr(m, "_pulse_find_server", lambda: "tcp:1.2.3.4")
-    monkeypatch.setattr(
-        m.subprocess, "check_output", lambda *a, **k: "Server Name: x\nServer Version: y\n"
-    )
-    monkeypatch.setattr(
-        m,
-        "_pulse_list_sources",
-        lambda s: [{"index": 0, "name": "wavein"}, {"index": 1, "name": "rdpsource"}],
-    )
-    io_mock = MagicMock()
-    io_mock._pulse_input = "wavein"
-    io_mock._pulse_output = "waveout"
-    io_mock.record.return_value = np.zeros((48000, 1), dtype=np.int16)
-    monkeypatch.setattr(m, "AudioIO", lambda: io_mock)
-
-    with patch("builtins.print") as p:
-        m.pulse_diagnostics()
-    p.assert_any_call("=== Diagnostics PulseAudio (WSL2) ===\n")
-
-
-def test_pulse_diagnostics_pactl_error(monkeypatch) -> None:
-    import hal_voice.adapters.audio_io as m
-
-    monkeypatch.setattr(m, "_is_wsl", lambda: True)
-    monkeypatch.setattr(m, "_pulse_find_server", lambda: None)
-
-    def _raise(*a, **k):
-        raise subprocess.CalledProcessError(1, "pactl")
-
-    monkeypatch.setattr(m.subprocess, "check_output", _raise)
-    with patch("builtins.print") as p:
-        m.pulse_diagnostics()
-    p.assert_any_call(
-        "[ERREUR] pactl info impossible : Command 'pactl' returned non-zero exit status 1."
-    )
+    
+    # Mock sf.read pour renvoyer un faux audio
+    import soundfile as sf
+    fake_audio = np.zeros((100, 1), dtype=np.float32)
+    monkeypatch.setattr(sf, "read", lambda p: (fake_audio, 16000))
+    
+    # Mock io.play
+    monkeypatch.setattr(io, "play", MagicMock())
+    
+    io.play_file("fake.wav")
+    io.play.assert_called_once()
