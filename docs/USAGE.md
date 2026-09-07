@@ -87,11 +87,12 @@ Tous les paramètres sont configurables via variables d'environnement :
 
 | Variable | Défaut | Description |
 |---|---|---|
-| `HAL_VOICE_MODEL_PATH` | `models/vosk-model-small-fr-0.22` | Chemin vers le modèle Vosk |
+| `HAL_VOICE_MODEL_PATH` | `models/vosk-model-fr-0.6-linto-2.2.0` | Chemin vers le modèle Vosk |
 | `HAL_VOICE_SAMPLE_RATE` | `16000` | Fréquence d'échantillonnage (Hz) |
 | `HAL_VOICE_CHANNELS` | `1` | Nombre de canaux (1=mono) |
 | `HAL_VOICE_DTYPE` | `int16` | Type de données audio |
-| `HAL_VOICE_WAKE_WORD` | `hal` | Mot d'activation (placeholder) |
+| `HAL_VOICE_WAKE_WORD` | `hal` | Mot d'activation |
+| `HAL_VOICE_WAKE_WORD_VARIANTS` | `al,ah,allez,à` | Variantes phonétiques acceptées (Vosk ne reconnaît pas toujours un mot court) — liste CSV |
 | `HAL_VOICE_SILENT` | `false` | `true` → désactive la synthèse vocale (équivaut à `--silent`) |
 
 Exemple :

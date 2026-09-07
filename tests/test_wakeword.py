@@ -74,6 +74,29 @@ def test_default_wake_word_is_hal() -> None:
     assert WakeWordDetector().wake_word == "hal"
 
 
+def test_variant_matches() -> None:
+    """Une variante phonétique reconnue à la place du wake word matche."""
+    d = WakeWordDetector("hal", variants=("al", "ah", "allez"))
+    assert d.matches("al")
+    assert d.matches("AH")
+    assert d.matches("allez la musique")
+    assert d.matches("dis hal et puis on verra")
+
+
+def test_variant_not_included_no_match() -> None:
+    """Sans variante configurée, le wake word seul matche."""
+    d = WakeWordDetector("hal")
+    assert not d.matches("al")
+    assert not d.matches("allez")
+
+
+def test_strip_removes_variant() -> None:
+    """strip_wake_word() retire aussi la variante détectée."""
+    d = WakeWordDetector("hal", variants=("al",))
+    assert d.strip_wake_word("al ecoute ceci") == "ecoute ceci"
+    assert d.strip_wake_word("ecoute hal ceci") == "ecoute ceci"
+
+
 # ── AdaptiveVoiceActivity ────────────────────────────────────────────
 
 

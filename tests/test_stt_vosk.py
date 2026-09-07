@@ -57,7 +57,7 @@ def test_config_from_env_default(monkeypatch) -> None:
     """load_config_from_env() utilise les valeurs par défaut si pas de variable d'env."""
     monkeypatch.delenv("HAL_VOICE_MODEL_PATH", raising=False)
     cfg = load_config_from_env()
-    assert cfg.vosk_model_path.name == "vosk-model-small-fr-0.22"
+    assert cfg.vosk_model_path.name == "vosk-model-fr-0.6-linto-2.2.0"
     assert cfg.sample_rate == 16000
 
 
@@ -68,6 +68,20 @@ def test_config_from_env_override(monkeypatch, tmp_path) -> None:
     cfg = load_config_from_env()
     assert cfg.vosk_model_path == tmp_path / "custom_model"
     assert cfg.sample_rate == 8000
+
+
+def test_config_wake_word_variants_default(monkeypatch) -> None:
+    """Les variantes du wake word utilisent les valeurs par défaut."""
+    monkeypatch.delenv("HAL_VOICE_WAKE_WORD_VARIANTS", raising=False)
+    cfg = load_config_from_env()
+    assert cfg.wake_word_variants == ("al", "ah", "allez", "à")
+
+
+def test_config_wake_word_variants_override(monkeypatch) -> None:
+    """HAL_VOICE_WAKE_WORD_VARIANTS (liste CSV) remplace les variantes."""
+    monkeypatch.setenv("HAL_VOICE_WAKE_WORD_VARIANTS", " al , ALE, ")
+    cfg = load_config_from_env()
+    assert cfg.wake_word_variants == ("al", "ale")
 
 
 # ── Charge / transcription heureuses (vosk mocké) ────────────────────

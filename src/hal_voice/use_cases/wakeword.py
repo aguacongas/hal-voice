@@ -25,20 +25,34 @@ from __future__ import annotations
 class WakeWordDetector:
     """Détecte le mot d'activation dans un texte transcrit.
 
-    Le wake word peut être un mot simple ("hal") ou une phrase
-    ("ok hal"). La détection est insensible à la casse et ignore la
-    ponctuation autour des mots.
+    Le wake word peut être un mot simple ("hal") ou une phrase ("ok hal").
+    La détection est insensible à la casse et ignore la ponctuation autour
+    des mots.
+
+    Certains moteurs de STT (Vosk) ne reconnaissent pas bien un wake word
+    court hors lexique : dire "hal" peut être transcrit "al", "ah", "allez"…
+    On accepte donc aussi une liste de ``variants`` phonétiques équivalents.
     """
 
-    def __init__(self, wake_word: str = "hal") -> None:
+    def __init__(
+        self,
+        wake_word: str = "hal",
+        variants: tuple[str, ...] = (),
+    ) -> None:
         w = wake_word.strip().lower()
         self._wake_word = w
         self._tokens = {t for t in w.split() if t}
+        self._variants = {v.strip().lower() for v in variants if v.strip()}
 
     @property
     def wake_word(self) -> str:
         """Le mot d'activation (forme normalisée)."""
         return self._wake_word
+
+    @property
+    def variants(self) -> set[str]:
+        """Les variantes phonétiques acceptées en plus du wake word."""
+        return set(self._variants)
 
     @staticmethod
     def _bare(token: str) -> str:
@@ -46,24 +60,29 @@ class WakeWordDetector:
         return token.strip(".,!?;:'\"()[]{}—–-")
 
     def matches(self, text: str) -> bool:
-        """True si ``text`` contient tous les mots du mot d'activation.
+        """True si ``text`` contient le wake word ou une de ses variantes.
 
         Pour un wake word multi-mots ("ok hal"), tous les tokens doivent
-        être présents dans la transcription (ordre libre).
-        """
-        if not text or not self._tokens:
-            return False
-        tokens = {self._bare(t) for t in text.lower().split()}
-        return self._tokens.issubset(tokens)
-
-    def strip_wake_word(self, text: str) -> str:
-        """Retire le mot d'activation et retourne le reste du texte.
-
-        Utile pour isoler la commande qui suit le wake word.
+        être présents (ordre libre). Une seule variante suffit à matcher.
         """
         if not text:
+            return False
+        tokens = {self._bare(t) for t in text.lower().split()}
+        if self._tokens and self._tokens.issubset(tokens):
+            return True
+        variant_hits = tokens & self._variants
+        return bool(variant_hits)
+
+    def strip_wake_word(self, text: str) -> str:
+        """Retire le wake word (ou sa variante) et retourne le reste du texte."""
+        if not text:
             return ""
-        kept = [t for t in text.split() if self._bare(t.lower()) not in self._tokens]
+        kept = [
+            t
+            for t in text.split()
+            if self._bare(t.lower()) not in self._tokens
+            and self._bare(t.lower()) not in self._variants
+        ]
         return " ".join(kept).strip()
 
 

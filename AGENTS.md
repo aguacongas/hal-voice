@@ -20,7 +20,7 @@ Python 3.10+ app: 100% local voice assistant — STT (Vosk, French offline) + TT
 
 ## Config
 
-`src/hal_voice/domain/config.py` (chargé via `adapters/config_loader.py`) — all tunables via env vars, no hardcoding in modules: `HAL_VOICE_MODEL_PATH`, `HAL_VOICE_SAMPLE_RATE` (default 16000), `HAL_VOICE_CHANNELS` (1), `HAL_VOICE_DTYPE` (int16), `HAL_VOICE_WAKE_WORD`.
+`src/hal_voice/domain/config.py` (chargé via `adapters/config_loader.py`) — all tunables via env vars, no hardcoding in modules: `HAL_VOICE_MODEL_PATH`, `HAL_VOICE_SAMPLE_RATE` (default 16000), `HAL_VOICE_CHANNELS` (1), `HAL_VOICE_DTYPE` (int16), `HAL_VOICE_WAKE_WORD`. Default model is **`vosk-model-fr-0.6-linto-2.2.0`** (LINTO, ~1.6 Go, AGPL — in models/, gitignored): more accurate for French commands than the "small" and faster than "fr-0.22" (0.4xRT). **Wake word variants**: Vosk transcribes the short word "hal" imperfectly ("al", "ah", "allez", "à") — `WakeWordDetector` accepts a `variants` tuple (env `HAL_VOICE_WAKE_WORD_VARIANTS`, CSV, default `al,ah,allez,à`) so saying "hal" triggers reliably; exact variant output differs per model, tune via that env var. The `Orchestrator` strips the wake word and reuses the rest of the same slice as the command when present, else listens for a new slice. Note: no `.fsa` file in the Vosk models, so `KaldiRecognizer(...grammar=)` is NOT usable for a reliable wake-word grammar.
 
 ## Audio capture (audio_io.py) — critical WSL2 knowledge
 
@@ -33,12 +33,12 @@ Python 3.10+ app: 100% local voice assistant — STT (Vosk, French offline) + TT
 **`parecord` (Debian/Ubuntu build in WSL) gotchas** — a future agent WILL hit these:
 - It has **no `--duration` option**; a bare `parecord` records forever → you must read a fixed number of bytes then `terminate()`/`kill()`.
 - **`--file-format=wav` writing to `/dev/stdout` fails** with "Failed to open audio file" (returns 0 bytes) because stdout is a pipe. Writing to a **real temp file** (suffix `.raw` → forces raw s16le, no WAV header) works. `_record_pulse` already implements this.
-- `module-waveout` (PulseAudio for Windows) needs an **explicit `input_device=<index>`**; it does NOT follow the Windows default mic automatically. The index order comes from the WaveIn API and differs per machine. `input_device` must be an index; passing `device=` or `input_device_name` mis-sets/errors on the pgaskin build (it prints `device and device_name are no longer supported`).
+- `module-waveout` (PulseAudio for Windows) needs an **explicit `input_device=<index>`**; it does NOT follow the Windows default mic automatically. The index order comes from the WaveIn API and differs per machine. `input_device` must be an index; passing `device=` or `input_device_name` mis-sets/errors on the pgaskin build (it prints `device and device_name are no longer supported`). Use `scripts/get-default-mic.ps1` (+ `-IndexOnly`) to read the index of the **Windows default mic** (the one picked in Settings > Sound > Input). `setup.bat` writes it into `halvoice.pa` automatically; `input_device` should be patched if the user changes their default mic.
 - A stale PulseAudio pid file (`%USERPROFILE%\.config\pulse\WSSIEN237-runtime\pid`) causes a spurious "Daemon already running" on restart — delete the runtime dir when restarting.
 
 **Duplicate `module-waveout`**: `default.pa` may load `module-waveout` without `input_device`, creating a silent `wavein` source. Then `halvoice.pa` loads it again with the correct `input_device`, creating `wavein.2`. Comment out the line in `default.pa` to fix.
 
-**Auto-detection**: `_pulse_find_input_device()` probes each source with a 1 s capture (`_test_source_amplitude()`) and picks the one with the highest amplitude. If only one source exists, it's used directly.
+**Mic/device selection**: `_pulse_find_input_device()` first queries the **Windows default mic** (embedded PowerShell → MMDevice `GetDefaultAudioEndpoint` + WaveIn index + `szpname`, `_windows_default_mic()`) and picks the PulseAudio source whose `device.description` = `"WaveIn on <szpname>"` (`_pulse_list_sources_detailed()` + `_description_matches_wavein()`). This confirms the actual default mic is the one used. As a **fallback** it probes each source with a 1 s capture (`_test_source_amplitude()`) and picks the highest amplitude; a single source is used directly. Note: the description's `szpname` is truncated to 32 WCHAR by WaveIn.
 
 Resulting audio is mono int16 at the configured rate, fed to Vosk (`stt_vosk.py`). If no mic data, code returns a zeroed array (`_record_pulse` guards this).
 

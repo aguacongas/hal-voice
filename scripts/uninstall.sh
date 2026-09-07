@@ -67,10 +67,10 @@ fi
 echo ""
 echo "── 2. Modèle Vosk FR ──"
 
-MODEL_DIR="$PROJECT_DIR/models/vosk-model-small-fr-0.22"
+MODEL_DIR="$PROJECT_DIR/models/vosk-model-fr-0.6-linto-2.2.0"
 if [[ -d "$MODEL_DIR" ]]; then
     if $CHECK_ONLY; then
-        info "Supprimer : $MODEL_DIR (~40 Mo)"
+        info "Supprimer : $MODEL_DIR (~1,6 Go)"
     else
         rm -rf "$MODEL_DIR"
         ok "modèle Vosk supprimé"

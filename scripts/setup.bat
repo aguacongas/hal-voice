@@ -139,12 +139,35 @@ echo [4/5] Config PulseAudio...
 set "PA_CONF_DIR=%PA_DIR%\etc"
 set "HALVOICE_PA=%PA_CONF_DIR%\halvoice.pa"
 
+REM 4a. Micro par défaut Windows : on lit l'index WaveIn du micro choisi par
+REM l'utilisateur (Paramètres > Son > Entrée) — au lieu de tester chaque
+REM device par amplitude. Script : get-default-mic.ps1.
+set "MIC_INDEX="
+for /f "delims=" %%i in ('powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0get-default-mic.ps1" -IndexOnly') do set "MIC_INDEX=%%i"
+if "%MIC_INDEX%"=="" (
+    echo   ! Micro par defaut Windows introuvable.
+) else (
+    echo   OK -- micro par defaut Windows : index %MIC_INDEX%.
+)
+
+REM 4b. halvoice.pa pointe toujours sur input_device=<index par defaut>
+if %CHECK_ONLY% equ 0 if not "%MIC_INDEX%"=="" (
+    powershell -NoProfile -Command ^
+        "(Get-Content -Raw -LiteralPath '%HALVOICE_PA%' -ErrorAction SilentlyContinue) -replace 'input_device=\d+', 'input_device=%MIC_INDEX%' | Set-Content -NoNewline -LiteralPath '%HALVOICE_PA%' -ErrorAction SilentlyContinue"
+)
+
 if exist "%HALVOICE_PA%" (
-    echo   OK -- Config existante.
+    echo   OK -- Config existante (input_device mis a jour ^> %MIC_INDEX%).
 ) else (
     if %CHECK_ONLY% equ 1 (
         echo   ! Config PulseAudio absente.
     ) else (
+        if "%MIC_INDEX%"=="" (
+            echo   Echec : impossible de determiner le micro par defaut Windows.
+            echo   Lance get-default-mic.ps1 a la main puis relance setup.bat.
+            exit /b 1
+        )
+
         echo   Creation de la config...
 
         REM Créer le dossier etc s'il n'existe pas
@@ -155,8 +178,8 @@ if exist "%HALVOICE_PA%" (
             echo # halvoice.pa -- PulseAudio config for hal-voice
             echo # Expose le micro Windows via TCP 4713 pour WSL2
             echo.
-            echo # Micro Windows via WaveOut
-            echo load-module module-waveout sink_name=waveout source_name=wavein record=1 input_device=2
+            echo # Micro Windows par defaut (index %MIC_INDEX% via get-default-mic.ps1)
+            echo load-module module-waveout sink_name=waveout source_name=wavein record=1 input_device=%MIC_INDEX%
             echo.
             echo # Protocol TCP (accessible depuis WSL2)
             echo load-module module-native-protocol-tcp auth-anonymous=1

@@ -72,7 +72,13 @@ Le backend natif `sounddevice` a été retiré (plus de support Windows natif).
 1. PulseAudio Windows (TCP 4713) — vrai micro via `module-waveout`
 2. WSLg (unix socket) — micro virtuel RDP, silence
 
-**Auto-detection du device** : `_pulse_find_input_device()` probe chaque source avec `_test_source_amplitude()` (~1s chacune) et choisit celle avec la meilleure amplitude.
+**Sélection du device** : `_pulse_find_input_device()` interroge d'abord le
+**micro par défaut Windows** (PowerShell embarqué → MMDevice
+`GetDefaultAudioEndpoint` + index WaveIn + `szpname` ; `_windows_default_mic()`),
+puis choisit la source PulseAudio dont `device.description` = `"WaveIn on <szpname>"`
+(`_pulse_list_sources_detailed()` + `_description_matches_wavein()`). Fallback :
+test d'amplitude de chaque source avec `_test_source_amplitude()` (~1s chacune),
+source unique utilisée directement.
 
 ## `adapters/stt_vosk.py` — Speech-to-Text
 

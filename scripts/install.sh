@@ -214,18 +214,18 @@ done <<< "$MODULES"
 # ══════════════════════════════════════════════════════════════════════
 step "6/6 — Modèle Vosk FR"
 
-MODEL_DIR="$PROJECT_DIR/models/vosk-model-small-fr-0.22"
+MODEL_DIR="$PROJECT_DIR/models/vosk-model-fr-0.6-linto-2.2.0"
 if [[ -d "$MODEL_DIR" ]]; then
     ok "modèle présent"
 elif $CHECK_ONLY; then
     fail "modèle absent"
 else
-    echo "  Téléchargement (~40 Mo)..."
+    echo "  Téléchargement (~1,6 Go)..."
     mkdir -p "$PROJECT_DIR/models"
     (
         cd "$PROJECT_DIR/models"
         curl -sL --fail --proto '=https' --tlsv1.2 \
-            https://alphacephei.com/vosk/models/vosk-model-small-fr-0.22.zip \
+            https://alphacephei.com/vosk/models/vosk-model-fr-0.6-linto-2.2.0.zip \
             -o vosk-model.zip \
             && unzip -qo vosk-model.zip \
             && rm vosk-model.zip \
