@@ -137,14 +137,22 @@ class Orchestrator:
                 continue
 
             # 3. Wake word entendu → on s'engage pour écouter la commande.
+            self._engaged_exit = False
             self._speak("Bonjour. Je vous écoute.")
-            self._listen_engaged()
+
+            # La commande peut déjà être dans la même tranche que le wake
+            # word ("hal lis notes.txt") : on la récupère d'abord.
+            pending = self._wake_detector.strip_wake_word(text)
+            if pending:
+                self._handle_command(pending)
+            else:
+                self._listen_engaged()
+
             if self._engaged_exit:
                 return
 
     def _listen_engaged(self) -> None:
         """Après le wake word, on écoute la commande sur une fenêtre plus longue."""
-        self._engaged_exit = False
         print("\n--- Commande (après wake word) ---")
         audio = self._capture.record(duration_seconds=self._engage_seconds)
         text = self._stt.transcribe_array(audio)
@@ -152,7 +160,10 @@ class Orchestrator:
             return
 
         print(f"Vous : {text}")
+        self._handle_command(text)
 
+    def _handle_command(self, text: str) -> None:
+        """Analyse et exécute une commande. Met à jour ``_engaged_exit``."""
         intent = self._parser.parse(text)
         if not intent:
             return

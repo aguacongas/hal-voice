@@ -47,9 +47,9 @@ uv sync --extra dev
 
 ```bash
 mkdir -p models && cd models
-curl -LO https://alphacephei.com/vosk/models/vosk-model-small-fr-0.22.zip
-unzip vosk-model-small-fr-0.22.zip
-rm vosk-model-small-fr-0.22.zip
+curl -LO https://alphacephei.com/vosk/models/vosk-model-fr-0.6-linto-2.2.0.zip
+unzip vosk-model-fr-0.6-linto-2.2.0.zip
+rm vosk-model-fr-0.6-linto-2.2.0.zip
 ```
 
 Ou utilise ton script : `./scripts/install.sh` (auto-détection, multi-distro).
@@ -69,7 +69,9 @@ Ou utilise ton script : `./scripts/install.sh` (auto-détection, multi-distro).
 WSL2 ne voit pas le micro Windows par défaut. Il faut **PulseAudio for Windows**
 (build pgaskin) exposant micro + haut-parleurs sur TCP 4713 :
 - `module-waveout sink_name=waveout source_name=wavein record=1 input_device=<index>`
-- `input_device` choisit le micro WaveIn (auto-détecté par le code)
+- `input_device` = index WaveIn du **micro par défaut Windows** (celui choisi dans
+  Paramètres > Son > Entrée), obtenu via `scripts/get-default-mic.ps1`
+  (`setup.bat` l'écrit automatiquement dans `halvoice.pa`)
 - la ligne `module-waveout` de `default.pa` doit être **commentée** (évite un double device)
 
 `scripts/setup.bat` gère tout ça automatiquement. Pour vérifier :
@@ -77,6 +79,9 @@ WSL2 ne voit pas le micro Windows par défaut. Il faut **PulseAudio for Windows*
 ```bash
 ./scripts/run.sh --diagnose
 ```
+
+Si tu changes de micro par défaut sous Windows, relance `setup.bat` (ou remplace
+`input_device=<index>` dans `halvoice.pa` par le nouvel index).
 
 ## Tests
 
@@ -97,6 +102,6 @@ pytest -m requires_hardware
 |---|---|
 | `parecord: command not found` | `sudo apt install pulseaudio-utils` |
 | `PulseAudio Windows non trouvé` | Vérifier que PulseAudio tourne sur Windows (port 4713) |
-| `max_amplitude=0` (silence) | Vérifier `input_device` dans `halvoice.pa` |
+| `max_amplitude=0` (silence) | Re-lancer `setup.bat` pour mettre `input_device` à jour, ou vérifier `input_device` dans `halvoice.pa` (`scripts/get-default-mic.ps1`) |
 | `Daemon already running` | Supprimer `%USERPROFILE%\.config\pulse\*-runtime\pid` |
 | `Module Vosk introuvable` | Télécharger le modèle dans `models/` |

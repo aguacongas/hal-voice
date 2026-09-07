@@ -16,7 +16,7 @@
 ## v0.3.0 — STT (Vosk FR) ✅
 - [x] `stt_vosk.py` : transcription offline
 - [x] `config.py` : centralisation des chemins / sample rate / env
-- [x] Modèle `vosk-model-small-fr-0.22` téléchargé dans `models/`
+- [x] Modèle `vosk-model-fr-0.6-linto-2.2.0` téléchargé dans `models/`
 - [x] Smoke test micro → STT validé
 - [x] Tests pytest (5 verts)
 

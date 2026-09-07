@@ -20,8 +20,10 @@ Architecture :
 
 from __future__ import annotations
 
+import base64
 import logging
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -110,6 +112,225 @@ def _pulse_list_sources(server: str | None = None) -> list[dict[str, str | int]]
 _MIC_PATTERNS = ["alsa_input", "usb", "mic", "microphone", "webcam", "capture"]
 _RDP_PATTERNS = ["rdpsource", "rdp"]
 
+# ──────────────────────────────────────────────────────────────────────
+# Micro par défaut Windows — alternative au test d'amplitude par device
+# ──────────────────────────────────────────────────────────────────────
+#
+# Plutôt que de capturer ~1s sur chaque device pour deviner le bon micro
+# (lent, et échoue quand le micro voulu n'est même pas exposé par
+# PulseAudio), on interroge directement Windows : l'API Core Audio
+# (MMDevice ::GetDefaultAudioEndpoint) donne le micro de capture par défaut
+# que l'utilisateur a choisi dans Paramètres > Son > Entrée. On retrouve
+# ensuite son index WaveIn (la liste waveInGetDevCaps est celle que
+# module-waveout expose) et on sélectionne la source PulseAudio dont la
+# description correspond.
+#
+# NOTE : cette version intégrée reflète scripts/get-default-mic.ps1
+# (utilisé par setup.bat pour écrire halvoice.pa). Garder les deux en phase.
+_WINDOWS_DEFAULT_MIC_PS = r"""
+Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+
+[StructLayout(LayoutKind.Sequential)]
+public struct HalVoiceWaveCap {
+    public ushort wMid;
+    public ushort wPid;
+    public uint vDriverVersion;
+    [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 32)]
+    public string szPname;
+    public uint dwFormats;
+    public ushort wChannels;
+    public ushort wReserved;
+}
+
+public static class HalVoiceWinApi {
+    [DllImport("winmm.dll")]
+    public static extern uint waveInGetNumDevs();
+    [DllImport("winmm.dll")]
+    public static extern uint waveInGetDevCaps(
+        uint id, ref HalVoiceWaveCap caps, uint size);
+
+    [Guid("D666063F-1587-4E43-81F1-B948E807363F"),
+     InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    interface IMMDeviceProbe {
+        int a();
+        int o();
+        int GetId([MarshalAs(UnmanagedType.LPWStr)] out string id);
+    }
+
+    [Guid("A95664D2-9614-4F35-A746-DE8DB63617E6"),
+     InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    interface IMMDeviceEnumeratorProbe {
+        int f();
+        int GetDefaultAudioEndpoint(
+            int dataFlow, int role, out IMMDeviceProbe endpoint);
+    }
+
+    [ComImport, Guid("BCDE0395-E52F-467C-8E3D-C4579291692E")]
+    class MmDeviceEnumeratorComObjectProbe { }
+
+    public static string DefaultCaptureId() {
+        var enumerator =
+            (IMMDeviceEnumeratorProbe)(new MmDeviceEnumeratorComObjectProbe());
+        IMMDeviceProbe endpoint;
+        Marshal.ThrowExceptionForHR(
+            enumerator.GetDefaultAudioEndpoint(1, 1, out endpoint));
+        string id;
+        Marshal.ThrowExceptionForHR(endpoint.GetId(out id));
+        return id;
+    }
+}
+'@
+
+function Get-HalVoiceScore([string]$a, [string]$b) {
+    $normA = (($a.ToLowerInvariant()) -replace '[^a-z0-9 ]', ' ')
+    $normB = (($b.ToLowerInvariant()) -replace '[^a-z0-9 ]', ' ')
+    $tokA = @($normA -split '\s+' | Where-Object { $_ })
+    $tokB = @($normB -split '\s+' | Where-Object { $_ })
+    if ($tokA.Count -eq 0 -or $tokB.Count -eq 0) { return 0.0 }
+    $matches = 0.0
+    $total = 0.0
+    foreach ($t in $tokA) { $total += $t.Length }
+    foreach ($t in $tokB) { $total += $t.Length }
+    foreach ($ta in $tokA) {
+        foreach ($tb in $tokB) {
+            if ($ta -eq $tb) { $matches += $ta.Length * 2.0 }
+        }
+    }
+    if ($total -eq 0) { return 0.0 }
+    return $matches / $total
+}
+
+try {
+    $defaultId = [HalVoiceWinApi]::DefaultCaptureId()
+} catch { exit 0 }
+$defKey = "HKLM:\SYSTEM\CurrentControlSet\Enum\SWD\MMDEVAPI\$defaultId"
+$defaultName =
+    (Get-ItemProperty $defKey -ErrorAction SilentlyContinue).FriendlyName
+if (-not $defaultName) { exit 0 }
+
+$count = [HalVoiceWinApi]::waveInGetNumDevs()
+$capsSize = [System.Runtime.InteropServices.Marshal]::SizeOf(
+    [type][HalVoiceWaveCap])
+$bestIndex = -1
+$bestName = ""
+$bestScore = 0.0
+for ($i = 0; $i -lt $count; $i++) {
+    $caps = New-Object HalVoiceWaveCap
+    [void][HalVoiceWinApi]::waveInGetDevCaps(
+        [uint32]$i, [ref]$caps, [uint32]$capsSize)
+    $score = Get-HalVoiceScore $defaultName $caps.szPname
+    if ($score -gt $bestScore) {
+        $bestScore = $score
+        $bestIndex = $i
+        $bestName = $caps.szPname
+    }
+}
+if ($bestIndex -ge 0) {
+    Write-Output ("index=" + $bestIndex)
+    Write-Output ("name=" + $defaultName)
+    Write-Output ("szpname=" + $bestName)
+}
+"""
+
+
+def _windows_default_mic(timeout: float = 20.0) -> dict[str, str] | None:
+    """Interroge Windows pour le micro de capture par défaut (via PowerShell).
+
+    Depuis WSL2, ``powershell.exe`` est interopérable → on lance le helper
+    intégré (équivalent de ``scripts/get-default-mic.ps1``) et on parse ses
+    sorties ``clé=valeur`` :
+        - ``index``   → index WaveIn (0 = source ``wavein``)
+        - ``name``    → nom "friendly" du micro par défaut (MMDevice)
+        - ``szpname`` → nom ``waveInGetDevCaps`` qui sert de description
+                        ("WaveIn on <szpname>") dans PulseAudio
+
+    Renvoie ``None`` si l'interrogation échoue (pas de Windows / pas de
+    micro par défaut trouvé) — dans ce cas on garde le fallback par
+    amplitude.
+    """
+    if shutil.which("powershell.exe") is None:
+        return None
+    try:
+        encoded = base64.b64encode(_WINDOWS_DEFAULT_MIC_PS.encode("utf-16-le")).decode("ascii")
+        out = subprocess.run(
+            [
+                "powershell.exe",
+                "-NoProfile",
+                "-NonInteractive",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-EncodedCommand",
+                encoded,
+            ],
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            check=False,
+        )
+    except (subprocess.SubprocessError, OSError):
+        log.warning("Impossible d'interroger le micro par défaut Windows", exc_info=True)
+        return None
+
+    data: dict[str, str] = {}
+    for line in (out.stdout or "").splitlines():
+        line = line.strip()
+        if "=" in line:
+            key, _, value = line.partition("=")
+            data[key.strip()] = value.strip()
+    if "index" not in data or not data["index"].isdigit():
+        return None
+    log.info("Micro par défaut Windows : index=%s name=%s", data.get("index"), data.get("name"))
+    return data
+
+
+def _pulse_list_sources_detailed(server: str | None = None) -> dict[str, str]:
+    """Liste les sources avec leur description ``device.description``.
+
+    ``pactl list sources`` (format complet) renseigne pour chaque source
+    ``Name: <name>`` et ``device.description = "<desc>"``. Le module
+    module-waveout de PulseAudio Windows pose ``description = "WaveIn on
+    <szpname>"`` — c'est ce qui permet de retrouver la source correspondant
+    au micro par défaut Windows sans aucun test d'amplitude.
+    """
+    env = {**os.environ}
+    if server:
+        env["PULSE_SERVER"] = server
+    try:
+        out = subprocess.check_output(
+            ["pactl", "list", "sources"],
+            text=True,
+            stderr=subprocess.DEVNULL,
+            env=env,
+        )
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        return {}
+
+    detailed: dict[str, str] = {}
+    name = ""
+    for raw in out.splitlines():
+        line = raw.strip()
+        if line.startswith("Name:"):
+            name = line.split(":", 1)[1].strip()
+        elif line.startswith("device.description =") and name:
+            detailed[name] = line.split("=", 1)[1].strip().strip('"').strip("'")
+    return detailed
+
+
+def _description_matches_wavein(description: str, device_name: str) -> bool:
+    """Vrai si ``description`` (PulseAudio) référence bien ``device_name``.
+
+    Normalise (minuscules, alphanumériques) et vérifie que le nom du device
+    apparaît dans la description "WaveIn on <szpname>".
+    """
+
+    def _norm(s: str) -> str:
+        return " ".join(re.findall(r"[a-z0-9]+", s.lower()))
+
+    desc, device = _norm(description), _norm(device_name)
+    return bool(device) and device in desc
+
 
 def _test_source_amplitude(source: str, server: str | None = None, duration: float = 1.0) -> int:
     """Teste un device PulseAudio en capturant ``duration`` secondes.
@@ -168,7 +389,17 @@ def _test_source_amplitude(source: str, server: str | None = None, duration: flo
 
 
 def _pulse_find_input_device(server: str | None = None) -> str | None:
-    """Trouve le meilleur device d'entrée PulseAudio (pas un monitor)."""
+    """Trouve le device d'entrée PulseAudio (pas un monitor).
+
+    Stratégie — par ordre de préférence :
+        1. **Micro par défaut Windows** : on interroge Windows (MMDevice)
+           pour l'entrée sélectionnée par l'utilisateur, puis on retrouve la
+           source PulseAudio dont la description correspond. **Aucun test
+           d'amplitude** : c'est le choix de l'utilisateur, pas le device qui
+           capte le plus fort.
+        2. Fallback historique : test d'amplitude (~1s par source) quand
+           l'interrogation Windows n'est pas possible.
+    """
     candidates: list[str] = []
     rdp_fallback: str | None = None
     for src in _pulse_list_sources(server):
@@ -186,22 +417,61 @@ def _pulse_find_input_device(server: str | None = None) -> str | None:
     if len(candidates) == 1:
         return candidates[0]
 
-    log.info("Test de %d devices PulseAudio...", len(candidates))
+    # 1. Micro par défaut Windows (interrogation directe, sans test audio)
+    windows_mic = _windows_default_mic()
+    if windows_mic:
+        device_key = windows_mic.get("szpname") or windows_mic.get("name") or ""
+        chosen = _pick_by_windows_mic(candidates, server, windows_mic, device_key)
+        if chosen is not None:
+            return chosen
+        log.warning(
+            "Micro par défaut Windows (%s, index %s) introuvable dans PulseAudio"
+            " — halvoice.pa pointe peut-être sur l'ancien micro. Lance "
+            "scripts/setup.bat pour corriger input_device.",
+            windows_mic.get("name"),
+            windows_mic.get("index"),
+        )
+
+    # 2. Fallback : test d'amplitude historique
+    chosen, best_amp = _pick_by_amplitude(candidates, server)
+    if best_amp > 100:
+        return chosen
+    log.warning("Aucun device ne capte (>100), utilisation de %s", candidates[0])
+    return candidates[0]
+
+
+def _pick_by_windows_mic(
+    candidates: list[str],
+    server: str | None,
+    windows_mic: dict,
+    device_key: str,
+) -> str | None:
+    """Retourne la source PulseAudio dont la description correspond au micro
+    par défaut Windows, ou None si aucune ne correspond."""
+    detailed = _pulse_list_sources_detailed(server)
+    for src_name in candidates:
+        desc = detailed.get(src_name, "")
+        if _description_matches_wavein(desc, device_key):
+            log.info(
+                "Device choisi d'après le micro par défaut Windows : %s (%s)",
+                src_name,
+                windows_mic.get("name"),
+            )
+            return src_name
+    return None
+
+
+def _pick_by_amplitude(candidates: list[str], server: str | None) -> tuple[str, int]:
+    """Teste l'amplitude de chaque source (~1s) et retourne (meilleure source,
+    amplitude max). Plus forte amplitude l'emporte, pas de tie-break."""
     best_source = candidates[0]
     best_amp = 0
     for src_name in candidates:
         amp = _test_source_amplitude(src_name, server, duration=1.0)
-        log.info("  %s -> amplitude %d", src_name, amp)
         if amp > best_amp:
             best_amp = amp
             best_source = src_name
-
-    if best_amp > 100:
-        log.info("Device choisi : %s (amplitude %d)", best_source, best_amp)
-        return best_source
-
-    log.warning("Aucun device ne capte (>100), utilisation de %s", candidates[0])
-    return candidates[0]
+    return best_source, best_amp
 
 
 def _pulse_find_output_device(server: str | None = None) -> str | None:
@@ -436,6 +706,16 @@ def pulse_diagnostics() -> None:
         return
 
     print("=== Diagnostics PulseAudio (WSL2) ===\n")
+
+    windows_mic = _windows_default_mic()
+    print("Micro par défaut Windows :")
+    if windows_mic:
+        print(f"  index={windows_mic.get('index')} name={windows_mic.get('name')}")
+        print(f"  szpname={windows_mic.get('szpname')}")
+    else:
+        print("  inconnu (powershell.exe indisponible ou aucun micro par défaut)")
+
+    print()
 
     server = _pulse_find_server()
     if server:

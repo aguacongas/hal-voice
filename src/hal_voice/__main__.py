@@ -51,7 +51,7 @@ def main() -> int:
         tts=tts,
         parser=parser,
         silent=cfg.silent,
-        wake_detector=WakeWordDetector(cfg.wake_word),
+        wake_detector=WakeWordDetector(cfg.wake_word, variants=cfg.wake_word_variants),
     )
     return orchestrator.run()
 

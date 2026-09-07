@@ -416,6 +416,32 @@ def test_run_continuous_ignores_unparsed_text(monkeypatch) -> None:
     assert stt.calls >= 1
 
 
+def test_standby_command_in_same_slice_as_wake(monkeypatch, tmp_path) -> None:
+    """La commande dans la même tranche que le wake word est traitée sans ré-écoute."""
+
+    doc = tmp_path / "notes.txt"
+    doc.write_text("contenu secret", encoding="utf-8")
+    # amplitudes : silencieux puis fort (une seule parole contenant wake + commande)
+    capture = AmplitudeCapture([50.0, 2000.0])
+    stt = FakeSTT([f"hal lis {doc}"])
+    tts = FakeTTS()
+    orch = Orchestrator(
+        capture=capture,
+        stt=stt,
+        tts=tts,
+        parser=CommandParser(),
+        wake_detector=WakeWordDetector("hal"),
+        vad=AdaptiveVoiceActivity(init_floor=200.0, factor=3.0),
+    )
+    monkeypatch.setattr("builtins.print", lambda *a, **k: None)
+
+    result = orch.run()
+    assert result == 0
+    # Aucune seconde écoute pour la commande (déjà dans la tranche du wake word)
+    assert stt.calls == 1
+    assert any("contenu secret" in s for s in tts.spoken)
+
+
 def test_standby_text_without_intent_is_ignored(monkeypatch) -> None:
     """Veille : parole détectée mais texte sans intention → on reste en veille."""
     capture = AmplitudeCapture([50.0, 2000.0, 2000.0])

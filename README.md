@@ -27,7 +27,7 @@ Donner la parole et l'ouïe à un assistant vocal local, en français, sans dép
 ## Stack technique (Clean Architecture)
 
 - **Langage** : Python 3.10+
-- **STT** : [`vosk`](https://pypi.org/project/vosk/) + modèle `vosk-model-small-fr-0.22`
+- **STT** : [`vosk`](https://pypi.org/project/vosk/) + modèle `vosk-model-fr-0.6-linto-2.2.0`
 - **TTS** : `pyttsx3` + `espeak-ng`
 - **Audio** : `parecord`/`paplay` via PulseAudio (WSL2)
 - **Hotkey** : `pynput`

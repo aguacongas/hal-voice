@@ -98,11 +98,11 @@ if exist "%PROJECT_DIR%\.venv" (
     )
 )
 
-if exist "%PROJECT_DIR%\models\vosk-model-small-fr-0.22" (
+if exist "%PROJECT_DIR%\models\vosk-model-fr-0.6-linto-2.2.0" (
     if %CHECK_ONLY% equ 1 (
-        echo   ! A supprimer : models\vosk-model-small-fr-0.22
+        echo   ! A supprimer : models\vosk-model-fr-0.6-linto-2.2.0
     ) else (
-        rmdir /s /q "%PROJECT_DIR%\models\vosk-model-small-fr-0.22" >nul 2>&1
+        rmdir /s /q "%PROJECT_DIR%\models\vosk-model-fr-0.6-linto-2.2.0" >nul 2>&1
         echo   OK -- modele Vosk supprime.
     )
 )

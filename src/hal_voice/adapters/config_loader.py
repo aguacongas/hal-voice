@@ -25,6 +25,7 @@ from hal_voice.domain.config import (
     DEFAULT_SAMPLE_RATE,
     DEFAULT_VOSK_MODEL_PATH,
     DEFAULT_WAKE_WORD,
+    DEFAULT_WAKE_WORD_VARIANTS,
     Config,
 )
 
@@ -50,5 +51,14 @@ def load_config_from_env() -> Config:
         channels=int(os.environ.get("HAL_VOICE_CHANNELS", DEFAULT_CHANNELS)),
         dtype=os.environ.get("HAL_VOICE_DTYPE", DEFAULT_DTYPE),
         wake_word=os.environ.get("HAL_VOICE_WAKE_WORD", DEFAULT_WAKE_WORD),
+        wake_word_variants=_env_variants("HAL_VOICE_WAKE_WORD_VARIANTS"),
         silent=_env_bool("HAL_VOICE_SILENT") or "--silent" in sys.argv,
     )
+
+
+def _env_variants(name: str) -> tuple[str, ...]:
+    """Lit une variable d'env contenant une liste de mots séparés par des virgules."""
+    raw = os.environ.get(name, "").strip()
+    if not raw:
+        return DEFAULT_WAKE_WORD_VARIANTS
+    return tuple(v.strip().lower() for v in raw.split(",") if v.strip())

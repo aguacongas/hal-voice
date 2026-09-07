@@ -247,6 +247,7 @@ def test_pulse_find_input_device_skips_monitor_and_uses_rdp_fallback(monkeypatch
 def test_pulse_find_input_device_picks_best_amplitude(monkeypatch) -> None:
     import hal_voice.adapters.audio_io as m
 
+    monkeypatch.setattr(m, "_windows_default_mic", lambda: None)
     monkeypatch.setattr(
         m,
         "_pulse_list_sources",
@@ -261,6 +262,7 @@ def test_pulse_find_input_device_picks_best_amplitude(monkeypatch) -> None:
 def test_pulse_find_input_device_fallback_first_when_low_amp(monkeypatch) -> None:
     import hal_voice.adapters.audio_io as m
 
+    monkeypatch.setattr(m, "_windows_default_mic", lambda: None)
     monkeypatch.setattr(
         m,
         "_pulse_list_sources",
@@ -322,6 +324,162 @@ def test_test_source_amplitude_missing_parecord(monkeypatch, tmp_path) -> None:
 
     monkeypatch.setattr(m.subprocess, "Popen", _raise)
     assert m._test_source_amplitude("src") == 0
+
+
+# ── Micro par défaut Windows (alternative au test d'amplitude) ──────────
+
+
+def test_windows_default_mic_parses_output(monkeypatch) -> None:
+    import hal_voice.adapters.audio_io as m
+
+    fake = m.subprocess.CompletedProcess(
+        args=[],
+        returncode=0,
+        stdout=(
+            "index=0\n"
+            "name=Microphone sur casque (Microsoft USB Link)\n"
+            "szpname=Microphone sur casque (Microsof\n"
+        ),
+    )
+    monkeypatch.setattr(m.shutil, "which", lambda *a, **k: "powershell.exe")
+    monkeypatch.setattr(m.subprocess, "run", lambda *a, **k: fake)
+    result = m._windows_default_mic()
+    assert result is not None
+    assert result["index"] == "0"
+    assert "Microsoft USB Link" in result["name"]
+    assert result["szpname"].startswith("Microphone sur casque")
+
+
+def test_windows_default_mic_none_without_powershell(monkeypatch) -> None:
+    import hal_voice.adapters.audio_io as m
+
+    monkeypatch.setattr(m.shutil, "which", lambda *a, **k: None)
+    assert m._windows_default_mic() is None
+
+
+def test_windows_default_mic_none_on_error(monkeypatch) -> None:
+    import hal_voice.adapters.audio_io as m
+
+    monkeypatch.setattr(m.shutil, "which", lambda *a, **k: "powershell.exe")
+
+    def _raise(*a, **k):
+        raise OSError("boom")
+
+    monkeypatch.setattr(m.subprocess, "run", _raise)
+    assert m._windows_default_mic() is None
+
+
+def test_windows_default_mic_none_without_index(monkeypatch) -> None:
+    import hal_voice.adapters.audio_io as m
+
+    fake = m.subprocess.CompletedProcess(args=[], returncode=0, stdout="name=truc\n")
+    monkeypatch.setattr(m.shutil, "which", lambda *a, **k: "powershell.exe")
+    monkeypatch.setattr(m.subprocess, "run", lambda *a, **k: fake)
+    assert m._windows_default_mic() is None
+
+
+def test_pulse_list_sources_detailed_parses_descriptions(monkeypatch) -> None:
+    import hal_voice.adapters.audio_io as m
+
+    out = (
+        "Source #0\n"
+        "\tState: RUNNING\n"
+        "\tName: wavein\n"
+        "\tDescription: WaveIn on Microphone sur casque (Microsof\n"
+        "\tProperties:\n"
+        '\t\tdevice.description = "WaveIn on Microphone sur casque (Microsof"\n'
+        '\t\tdevice.icon_name = "audio-input-microphone"\n'
+        "Source #1\n"
+        "\tState: RUNNING\n"
+        "\tName: waveout.monitor\n"
+        '\t\tdevice.description = "Monitor of WaveOut on Microsoft Sound Mapper"\n'
+    )
+    monkeypatch.setattr(m.subprocess, "check_output", lambda *a, **k: out)
+    detailed = m._pulse_list_sources_detailed("tcp:1.2.3.4")
+    assert detailed["wavein"] == "WaveIn on Microphone sur casque (Microsof"
+    assert "Monitor of WaveOut" in detailed["waveout.monitor"]
+
+
+def test_pulse_list_sources_detailed_empty_on_error(monkeypatch) -> None:
+    import hal_voice.adapters.audio_io as m
+
+    def _raise(*a, **k):
+        raise subprocess.CalledProcessError(1, "pactl")
+
+    monkeypatch.setattr(m.subprocess, "check_output", _raise)
+    assert m._pulse_list_sources_detailed("server") == {}
+
+
+def test_description_matches_wavein() -> None:
+    import hal_voice.adapters.audio_io as m
+
+    assert m._description_matches_wavein(
+        "WaveIn on Microphone sur casque (Microsof", "Microphone sur casque (Microsof"
+    )
+    assert not m._description_matches_wavein("WaveIn on Jabra Headset", "Microphone Realtek")
+    assert not m._description_matches_wavein("", "Microphone")
+    assert not m._description_matches_wavein("WaveIn on Jabra", "")
+
+
+def test_pulse_find_input_device_prefers_windows_default(monkeypatch) -> None:
+    """Avec le micro par défaut Windows, aucune source n'est testée en amplitude."""
+    import hal_voice.adapters.audio_io as m
+
+    called_amp = []
+
+    def _amp(*a, **k):
+        called_amp.append(True)
+        return 1000
+
+    monkeypatch.setattr(
+        m,
+        "_pulse_list_sources",
+        lambda s: [{"index": 0, "name": "wavein"}, {"index": 1, "name": "deal_sound"}],
+    )
+    monkeypatch.setattr(
+        m,
+        "_windows_default_mic",
+        lambda: {
+            "index": "0",
+            "name": "Microphone sur casque (Microsoft USB Link)",
+            "szpname": "Microphone sur casque (Microsof",
+        },
+    )
+    monkeypatch.setattr(
+        m,
+        "_pulse_list_sources_detailed",
+        lambda s: {
+            "wavein": "WaveIn on Microphone sur casque (Microsof",
+            "deal_sound": "WaveIn on Autre",
+        },
+    )
+    monkeypatch.setattr(m, "_test_source_amplitude", _amp)
+    assert m._pulse_find_input_device() == "wavein"
+    assert called_amp == []
+
+
+def test_pulse_find_input_device_warns_when_default_not_exposed(monkeypatch) -> None:
+    import hal_voice.adapters.audio_io as m
+
+    monkeypatch.setattr(
+        m,
+        "_pulse_list_sources",
+        lambda s: [{"index": 0, "name": "wavein"}, {"index": 1, "name": "other"}],
+    )
+    monkeypatch.setattr(
+        m,
+        "_windows_default_mic",
+        lambda: {"index": "0", "name": "Micro casque", "szpname": "Micro casque"},
+    )
+    monkeypatch.setattr(m, "_pulse_list_sources_detailed", lambda s: {"wavein": "WaveIn on Jabra"})
+    monkeypatch.setattr(
+        m,
+        "_test_source_amplitude",
+        lambda src, srv, duration: 400 if src == "other" else 50,
+    )
+    with patch("hal_voice.adapters.audio_io.log.warning") as warn:
+        assert m._pulse_find_input_device() == "other"
+    assert any("halvoice.pa" in str(call) for call in warn.call_args_list)
 
 
 # ── AudioIO : chemins heureux et API ──────────────────────────────────
@@ -462,6 +620,7 @@ def test_pulse_diagnostics_full_flow(monkeypatch) -> None:
     import hal_voice.adapters.audio_io as m
 
     monkeypatch.setattr(m, "_is_wsl", lambda: True)
+    monkeypatch.setattr(m, "_windows_default_mic", lambda: None)
     monkeypatch.setattr(m, "_pulse_find_server", lambda: "tcp:1.2.3.4")
     monkeypatch.setattr(
         m.subprocess, "check_output", lambda *a, **k: "Server Name: x\nServer Version: y\n"
