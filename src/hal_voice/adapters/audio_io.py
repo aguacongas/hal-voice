@@ -421,16 +421,9 @@ def _pulse_find_input_device(server: str | None = None) -> str | None:
     windows_mic = _windows_default_mic()
     if windows_mic:
         device_key = windows_mic.get("szpname") or windows_mic.get("name") or ""
-        detailed = _pulse_list_sources_detailed(server)
-        for src_name in candidates:
-            desc = detailed.get(src_name, "")
-            if _description_matches_wavein(desc, device_key):
-                log.info(
-                    "Device choisi d'après le micro par défaut Windows : %s (%s)",
-                    src_name,
-                    windows_mic.get("name"),
-                )
-                return src_name
+        chosen = _pick_by_windows_mic(candidates, server, windows_mic, device_key)
+        if chosen is not None:
+            return chosen
         log.warning(
             "Micro par défaut Windows (%s, index %s) introuvable dans PulseAudio"
             " — halvoice.pa pointe peut-être sur l'ancien micro. Lance "
@@ -440,22 +433,45 @@ def _pulse_find_input_device(server: str | None = None) -> str | None:
         )
 
     # 2. Fallback : test d'amplitude historique
-    log.info("Test de %d devices PulseAudio...", len(candidates))
+    chosen, best_amp = _pick_by_amplitude(candidates, server)
+    if best_amp > 100:
+        return chosen
+    log.warning("Aucun device ne capte (>100), utilisation de %s", candidates[0])
+    return candidates[0]
+
+
+def _pick_by_windows_mic(
+    candidates: list[str],
+    server: str | None,
+    windows_mic: dict,
+    device_key: str,
+) -> str | None:
+    """Retourne la source PulseAudio dont la description correspond au micro
+    par défaut Windows, ou None si aucune ne correspond."""
+    detailed = _pulse_list_sources_detailed(server)
+    for src_name in candidates:
+        desc = detailed.get(src_name, "")
+        if _description_matches_wavein(desc, device_key):
+            log.info(
+                "Device choisi d'après le micro par défaut Windows : %s (%s)",
+                src_name,
+                windows_mic.get("name"),
+            )
+            return src_name
+    return None
+
+
+def _pick_by_amplitude(candidates: list[str], server: str | None) -> tuple[str, int]:
+    """Teste l'amplitude de chaque source (~1s) et retourne (meilleure source,
+    amplitude max). Plus forte amplitude l'emporte, pas de tie-break."""
     best_source = candidates[0]
     best_amp = 0
     for src_name in candidates:
         amp = _test_source_amplitude(src_name, server, duration=1.0)
-        log.info("  %s -> amplitude %d", src_name, amp)
         if amp > best_amp:
             best_amp = amp
             best_source = src_name
-
-    if best_amp > 100:
-        log.info("Device choisi : %s (amplitude %d)", best_source, best_amp)
-        return best_source
-
-    log.warning("Aucun device ne capte (>100), utilisation de %s", candidates[0])
-    return candidates[0]
+    return best_source, best_amp
 
 
 def _pulse_find_output_device(server: str | None = None) -> str | None:
