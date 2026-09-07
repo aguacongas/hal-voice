@@ -313,7 +313,7 @@ def _pulse_list_sources_detailed(server: str | None = None) -> dict[str, str]:
         line = raw.strip()
         if line.startswith("Name:"):
             name = line.split(":", 1)[1].strip()
-        elif line.startswith('device.description =') and name:
+        elif line.startswith("device.description =") and name:
             detailed[name] = line.split("=", 1)[1].strip().strip('"').strip("'")
     return detailed
 
