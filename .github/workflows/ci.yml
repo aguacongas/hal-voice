@@ -39,10 +39,10 @@ jobs:
           python-version: ${{ matrix.python-version }}
           enable-cache: true
           cache-dependency-glob: uv.lock
-      - name: Dépendances système (PortAudio pour sounddevice)
+      - name: Dépendances système (PortAudio pour sounddevice, eSpeak pour TTS)
         run: |
           sudo apt-get update
-          sudo apt-get install -y libportaudio2
+          sudo apt-get install -y libportaudio2 espeak-ng
       - name: Installer le paquet + dev deps (uv, lockfile)
         run: uv sync --extra dev
       - name: Tests unitaires + couverture
