@@ -10,6 +10,7 @@ from unittest.mock import MagicMock
 import numpy as np
 import sounddevice as sd
 
+from hal_voice.adapters import audio_io as entry
 from hal_voice.adapters.audio_io import AudioIO
 from hal_voice.domain.config import DEFAULT_CHANNELS, DEFAULT_DTYPE, DEFAULT_SAMPLE_RATE
 
@@ -48,6 +49,24 @@ def test_list_devices_returns_list(monkeypatch) -> None:
     assert len(devices) == 2
     assert devices[0]["name"] == "Mic 1"
     assert devices[0]["index"] == 0
+
+
+def test_default_names(monkeypatch) -> None:
+    """default_input_name / default_output_name retournent les noms des devices."""
+    monkeypatch.setattr(sd, "query_devices", lambda device_id: {"name": f"Dev {device_id}"})
+
+    io = AudioIO(input_device=1, output_device=2)
+    assert io.default_input_name() == "Dev 1"
+    assert io.default_output_name() == "Dev 2"
+
+
+def test_default_names_fallback_unknown(monkeypatch) -> None:
+    """En cas d'erreur sur query_devices, on renvoie 'unknown'."""
+    monkeypatch.setattr(sd, "query_devices", MagicMock(side_effect=Exception("boom")))
+
+    io = AudioIO()
+    assert io.default_input_name() == "unknown"
+    assert io.default_output_name() == "unknown"
 
 
 # ── Capture ──────────────────────────────────────────────────────
@@ -148,3 +167,53 @@ def test_play_file_delegates(monkeypatch) -> None:
 
     io.play_file("fake.wav")
     io.play.assert_called_once()
+
+
+def test_play_file_stereo_to_mono(monkeypatch) -> None:
+    """play_file réduit un flux stéréo en mono quand channels == 1."""
+    io = AudioIO(channels=1)
+
+    import soundfile as sf
+
+    fake_stereo = np.ones((100, 2), dtype=np.float64)
+    monkeypatch.setattr(sf, "read", lambda p: (fake_stereo, 16000))
+    monkeypatch.setattr(io, "play", MagicMock())
+
+    io.play_file("fake.wav")
+    played = io.play.call_args[0][0]
+    assert played.shape == (100,)
+    assert played.dtype == np.int16
+
+
+# ── quick_test (boucle manuelle 5s) ──────────────────────────────
+
+
+def test_quick_test_with_sound(monkeypatch, capsys) -> None:
+    """quick_test() avec un signal audible joue l'audio capturé."""
+    fake_audio = np.full((16000, 1), 1000, dtype=np.int16)
+    io = AudioIO()
+    monkeypatch.setattr(entry, "AudioIO", lambda **kw: io)
+    monkeypatch.setattr(io, "record", lambda d: fake_audio)
+    monkeypatch.setattr(io, "play", MagicMock())
+
+    entry.quick_test()
+
+    output = capsys.readouterr().out
+    assert "max amplitude" in output
+    assert "Replay" in output
+    io.play.assert_called_once_with(fake_audio)
+
+
+def test_quick_test_silent(monkeypatch, capsys) -> None:
+    """quick_test() sans signal (silence) n'appelle pas play."""
+    silent = np.zeros((16000, 1), dtype=np.int16)
+    io = AudioIO()
+    monkeypatch.setattr(entry, "AudioIO", lambda **kw: io)
+    monkeypatch.setattr(io, "record", lambda d: silent)
+    monkeypatch.setattr(io, "play", MagicMock())
+
+    entry.quick_test()
+
+    output = capsys.readouterr().out
+    assert "Aucun son capté" in output
+    io.play.assert_not_called()
