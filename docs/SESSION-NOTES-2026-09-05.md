@@ -42,7 +42,7 @@ sounddevice≥0.5.6, soundfile≥0.14.0, pyttsx3≥2.99, pynput≥1.8.2, pytest�
 
 **Cause racine** : pyttsx3 (driver eSpeak) rend le texte dans un WAV temporaire, puis le joue via :
 ```python
-os.system(f"aplay {temp_wav_name} -q")   # ALSA
+os.system(f"aplay {temp_wav_name} -q")  # ALSA
 ```
 `aplay` utilise **ALSA**, qui n'a **pas de carte son sous WSL2** → échec silencieux. `PULSE_SERVER` seul ne suffit PAS (il sert à `paplay`/`parecord`, eSpeak n'en tient pas compte).
 

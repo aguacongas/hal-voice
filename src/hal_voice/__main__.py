@@ -16,7 +16,7 @@ from __future__ import annotations
 import logging
 import sys
 
-from hal_voice.adapters.audio_io import AudioIO, pulse_diagnostics
+from hal_voice.adapters.audio_io import AudioIO
 from hal_voice.adapters.config_loader import load_config_from_env
 from hal_voice.adapters.stt_vosk import STT
 from hal_voice.adapters.tts import TTS
@@ -32,7 +32,7 @@ def main() -> int:
     """Point d'entrée principal. Retourne 0 si OK, 1 si erreur."""
 
     if "--diagnose" in sys.argv:
-        pulse_diagnostics()
+        print("Diagnostic PulseAudio désactivé (non applicable sur Windows).")
         return 0
 
     cfg = load_config_from_env()
