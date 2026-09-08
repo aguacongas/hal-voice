@@ -78,8 +78,8 @@ class AudioIO:
             )
             sd.wait()
             return recording.reshape(-1, 1)
-        except Exception as e:
-            log.error("Erreur lors de la capture audio : %s", e)
+        except Exception:
+            log.exception("Erreur lors de la capture audio")
             return np.zeros((int(duration_seconds * self.sample_rate), 1), dtype=np.int16)
 
     # ── Lecture ──────────────────────────────────────────────────────
@@ -90,8 +90,8 @@ class AudioIO:
         try:
             sd.play(audio, samplerate=sr, device=self._output_id)
             sd.wait()
-        except Exception as e:
-            log.error("Erreur lors de la lecture audio : %s", e)
+        except Exception:
+            log.exception("Erreur lors de la lecture audio")
 
     # ── Fichiers ────────────────────────────────────────────────────
 
